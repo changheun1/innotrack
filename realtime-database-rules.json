@@ -1,0 +1,24 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        ".write": "auth != null && ((auth.uid === $uid && !data.exists() && newData.child('role').val() === 'guest' && newData.child('email').val() === auth.token.email) || (auth.uid === $uid && data.exists() && newData.child('role').val() === data.child('role').val() && newData.child('email').val() === data.child('email').val()) || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+    "projects": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+    },
+    "milestones": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+    },
+    "qualifications": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+    }
+  }
+}
