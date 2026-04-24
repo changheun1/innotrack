@@ -1987,6 +1987,22 @@ button {
   font-size: 0.7rem;
 }
 
+.admin-dashboard-table th,
+.admin-dashboard-table td {
+  text-align: center;
+  white-space: nowrap;
+  padding: 6px 6px;
+}
+
+.admin-dashboard-table th {
+  font-size: 0.7rem;
+}
+
+.admin-dashboard-table td {
+  font-size: 0.8rem;
+  line-height: 1.18;
+}
+
 .education-admin-row.is-selected {
   background: linear-gradient(90deg, rgba(46, 113, 242, 0.12), rgba(46, 113, 242, 0.03));
 }
@@ -4203,6 +4219,40 @@ body.modal-open {
   font-weight: 700;
 }
 
+.auth-link-button {
+  border: 0;
+  background: transparent;
+  color: #2c64c5;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.1;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.auth-link-button:hover,
+.auth-link-button:focus-visible {
+  color: #1c4fa6;
+  outline: none;
+}
+
+.login-modal-actions {
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.login-modal-actions .auth-link-button {
+  margin-right: auto;
+}
+
+.login-modal-actions-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .form-caption {
   margin: -2px 0 0;
   color: var(--muted);
@@ -4274,6 +4324,55 @@ body.modal-open {
 
 .fade-up {
   animation: fadeUp 480ms ease both;
+}
+
+.dashboard-chart-row,
+.dashboard-chart-col {
+  transition: transform 180ms ease;
+}
+
+.dashboard-chart-row:hover,
+.dashboard-chart-col:hover {
+  transform: translateY(-1px);
+}
+
+.dashboard-bar-fill-x {
+  transform-origin: left center;
+  animation: dashboardGrowX 720ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.dashboard-bar-fill-y {
+  transform-origin: center bottom;
+  animation: dashboardGrowY 720ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes dashboardGrowX {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes dashboardGrowY {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-chart-row,
+  .dashboard-chart-col,
+  .dashboard-bar-fill-x,
+  .dashboard-bar-fill-y {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
 }
 
 @keyframes fadeUp {

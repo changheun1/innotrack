@@ -20,6 +20,12 @@
     signupFail: "회원가입 중 오류가 발생했습니다.",
     loginDone: "로그인되었습니다.",
     loginFail: "로그인에 실패했습니다.",
+    profileSelfUpdated: "내 정보가 수정되었습니다.",
+    profileSelfUpdateFail: "내 정보 수정 중 오류가 발생했습니다.",
+    profileSelfUserOnly: "일반회원 계정에서만 정보수정을 사용할 수 있습니다.",
+    passwordResetEmailRequired: "비밀번호 재설정 메일을 받을 이메일을 먼저 입력해 주세요.",
+    passwordResetSent: "비밀번호 재설정 메일을 발송했습니다. 메일함을 확인해 주세요.",
+    passwordResetFail: "비밀번호 재설정 메일 발송에 실패했습니다.",
     logoutDone: "로그아웃되었습니다.",
     pendingApproval: "승인 대기 중입니다. 관리자 승인 후 프로젝트 데이터가 연결됩니다.",
     demoMode: "로컬 저장 모드",
@@ -27,6 +33,7 @@
     adminMode: "Firebase 관리자 모드",
     usersAdminOnly: "회원관리 목록은 관리자 권한에서만 확인할 수 있습니다.",
     usersLoading: "회원 정보를 불러오는 중입니다.",
+    usersLoadFail: "회원 정보를 불러오지 못했습니다. 권한 또는 Firebase 규칙을 확인해 주세요.",
     usersEmpty: "등록된 회원이 없습니다.",
     roleUpdated: "회원 권한이 변경되었습니다.",
     roleUpdateFail: "회원 권한 변경 중 오류가 발생했습니다.",
@@ -52,6 +59,7 @@
         mirror.innerHTML = `
           <div class="auth-user" data-auth-user-mirror hidden>
             <span class="auth-user-email" data-auth-user-email-mirror></span>
+            <button type="button" class="ghost-button" data-auth-open-profile-mirror hidden>정보수정</button>
             <button type="button" class="ghost-button" data-auth-open-users-mirror hidden>회원관리</button>
             <button type="button" class="ghost-button" data-auth-logout-mirror>로그아웃</button>
           </div>
@@ -66,6 +74,20 @@
       if (mirrorToolbars.length > 1) {
         mirrorToolbars.slice(1).forEach((node) => node.remove());
       }
+
+      topbar.querySelectorAll(".auth-user[data-auth-user-mirror]").forEach((userBar) => {
+        if (userBar.querySelector("[data-auth-open-profile-mirror]")) {
+          return;
+        }
+
+        const profileButton = document.createElement("button");
+        profileButton.type = "button";
+        profileButton.className = "ghost-button";
+        profileButton.setAttribute("data-auth-open-profile-mirror", "");
+        profileButton.hidden = true;
+        profileButton.textContent = "정보수정";
+        userBar.insertBefore(profileButton, userBar.querySelector("[data-auth-open-users-mirror], [data-auth-logout-mirror]"));
+      });
     });
   }
 
@@ -78,6 +100,7 @@
     authGuestActions: document.querySelector("#auth-guest-actions"),
     openSignupButton: document.querySelector("#open-signup-button"),
     openLoginButton: document.querySelector("#open-login-button"),
+    openProfileModalButton: document.querySelector("#open-profile-modal-button"),
     openUsersModalButton: document.querySelector("#open-users-modal-button"),
     logoutButton: document.querySelector("#logout-button"),
     authUserMirrors: Array.from(document.querySelectorAll("[data-auth-user-mirror]")),
@@ -85,16 +108,23 @@
     authGuestActionMirrors: Array.from(document.querySelectorAll("[data-auth-guest-actions-mirror]")),
     openSignupButtonMirrors: Array.from(document.querySelectorAll("[data-auth-open-signup-mirror]")),
     openLoginButtonMirrors: Array.from(document.querySelectorAll("[data-auth-open-login-mirror]")),
+    openProfileModalButtonMirrors: Array.from(document.querySelectorAll("[data-auth-open-profile-mirror]")),
     openUsersModalButtonMirrors: Array.from(document.querySelectorAll("[data-auth-open-users-mirror]")),
     logoutButtonMirrors: Array.from(document.querySelectorAll("[data-auth-logout-mirror]")),
     signupModal: document.querySelector("#signup-modal"),
     loginModal: document.querySelector("#login-modal"),
+    profileModal: document.querySelector("#profile-modal"),
     usersModal: document.querySelector("#users-modal"),
     signupForm: document.querySelector("#signup-form"),
     loginForm: document.querySelector("#login-form"),
+    profileForm: document.querySelector("#profile-form"),
     loginEmail: document.querySelector("#login-email"),
     loginPassword: document.querySelector("#login-password"),
     loginRememberEmail: document.querySelector("#login-remember-email"),
+    forgotPasswordButton: document.querySelector("#forgot-password-button"),
+    profileNameInput: document.querySelector("#profile-name-input"),
+    profileCompanyInput: document.querySelector("#profile-company-input"),
+    profileDepartmentInput: document.querySelector("#profile-department-input"),
     signupCompany: document.querySelector("#signup-company"),
     usersTableBody: document.querySelector("#users-table-body"),
     profileAvatar: document.querySelector("#profile-avatar"),
@@ -111,6 +141,8 @@
     projectsRef: null,
     milestonesRef: null,
     qualificationsRef: null,
+    certificationExamsRef: null,
+    certificationExamApplicationsRef: null,
     educationSchedulesRef: null,
     educationEnrollmentsRef: null,
     educationCostDetailsRef: null,
@@ -172,7 +204,7 @@
   }
 
   function syncBodyModalState() {
-    const authModalOpen = [elements.signupModal, elements.loginModal, elements.usersModal].some(isModalOpen);
+    const authModalOpen = [elements.signupModal, elements.loginModal, elements.profileModal, elements.usersModal].some(isModalOpen);
     const coreModalOpen = [
       document.querySelector("#project-modal"),
       document.querySelector("#qualification-modal"),
@@ -202,6 +234,7 @@
   function closeAllAuthModals() {
     closeModal(elements.signupModal);
     closeModal(elements.loginModal);
+    closeModal(elements.profileModal);
     closeModal(elements.usersModal);
   }
 
@@ -290,6 +323,10 @@
     return String(profile?.role || "").toLowerCase() === "admin";
   }
 
+  function hasMemberAccess(profile = state.currentUserProfile) {
+    return String(profile?.role || "").toLowerCase() === "user";
+  }
+
   function updateMirrorVisibility(nodes, hidden) {
     nodes.forEach((node) => {
       node.hidden = hidden;
@@ -348,8 +385,12 @@
     if (elements.openUsersModalButton) {
       elements.openUsersModalButton.hidden = !hasAdminAccess(profile);
     }
+    if (elements.openProfileModalButton) {
+      elements.openProfileModalButton.hidden = !hasMemberAccess(profile);
+    }
 
     updateMirrorVisibility(elements.openUsersModalButtonMirrors, !hasAdminAccess(profile));
+    updateMirrorVisibility(elements.openProfileModalButtonMirrors, !hasMemberAccess(profile));
 
     if (!state.firebaseReady) {
       setStatusChip(TEXT.configMissing, "warning");
@@ -431,6 +472,8 @@
     unsubscribeRef(state.projectsRef);
     unsubscribeRef(state.milestonesRef);
     unsubscribeRef(state.qualificationsRef);
+    unsubscribeRef(state.certificationExamsRef);
+    unsubscribeRef(state.certificationExamApplicationsRef);
     unsubscribeRef(state.educationSchedulesRef);
     unsubscribeRef(state.educationEnrollmentsRef);
     unsubscribeRef(state.educationCostDetailsRef);
@@ -439,6 +482,8 @@
     state.projectsRef = null;
     state.milestonesRef = null;
     state.qualificationsRef = null;
+    state.certificationExamsRef = null;
+    state.certificationExamApplicationsRef = null;
     state.educationSchedulesRef = null;
     state.educationEnrollmentsRef = null;
     state.educationCostDetailsRef = null;
@@ -737,6 +782,8 @@
     state.projectsRef = subscribeDataCollection("projects", "getProjects", "setProjects");
     state.milestonesRef = subscribeDataCollection("milestones", "getMilestones", "setMilestones");
     state.qualificationsRef = subscribeDataCollection("qualifications", "getQualifications", "setQualifications");
+    state.certificationExamsRef = subscribeDataCollection("certificationExams", "getCertificationExams", "setCertificationExams");
+    state.certificationExamApplicationsRef = subscribeDataCollection("certificationExamApplications", "getCertificationExamApplications", "setCertificationExamApplications");
     state.educationSchedulesRef = subscribeDataCollection("educationSchedules", "getEducationSchedules", "setEducationSchedules");
     state.educationEnrollmentsRef = subscribeDataCollection("educationEnrollments", "getEducationEnrollments", "setEducationEnrollments");
     state.educationCostDetailsRef = subscribeObjectCollection("educationCostDetails", "getEducationCostDetails", "setEducationCostDetails");
@@ -759,6 +806,14 @@
     state.usersRef = state.db.ref("users");
     state.usersRef.on("value", (snapshot) => {
       renderUsersTable(snapshot.val() || {});
+    }, (error) => {
+      if (elements.usersTableBody) {
+        elements.usersTableBody.innerHTML = `<tr><td colspan="9" class="empty-cell">${TEXT.usersLoadFail}</td></tr>`;
+      }
+      setStatusChip(TEXT.usersLoadFail, "warning");
+      if (error?.message) {
+        window.alert(`${TEXT.usersLoadFail}\n${error.message}`);
+      }
     });
   }
 
@@ -797,6 +852,12 @@
         return Promise.resolve(false);
       },
       saveQualifications() {
+        return Promise.resolve(false);
+      },
+      saveCertificationExams() {
+        return Promise.resolve(false);
+      },
+      saveCertificationExamApplications() {
         return Promise.resolve(false);
       },
       saveEducationSchedules() {
@@ -886,6 +947,84 @@
     }
   }
 
+  async function handleForgotPassword() {
+    if (!state.firebaseReady || !state.auth) {
+      window.alert(TEXT.configMissing);
+      return;
+    }
+
+    const email = String(elements.loginEmail?.value || "").trim();
+    if (!email) {
+      window.alert(TEXT.passwordResetEmailRequired);
+      elements.loginEmail?.focus();
+      return;
+    }
+
+    try {
+      await state.auth.sendPasswordResetEmail(email);
+      window.alert(TEXT.passwordResetSent);
+    } catch (error) {
+      window.alert(`${TEXT.passwordResetFail}\n${error?.message || ""}`.trim());
+    }
+  }
+
+  function prepareProfileModal() {
+    const profile = state.currentUserProfile;
+    if (!elements.profileForm || !profile) {
+      return;
+    }
+
+    if (elements.profileNameInput) {
+      elements.profileNameInput.value = String(profile.name || "").trim();
+    }
+    if (elements.profileDepartmentInput) {
+      elements.profileDepartmentInput.value = String(profile.department || "").trim();
+    }
+    if (elements.profileCompanyInput) {
+      elements.profileCompanyInput.innerHTML = renderCompanyOptions(profile.company);
+    }
+  }
+
+  async function handleProfileSubmit(event) {
+    event.preventDefault();
+
+    if (!state.db || !state.currentUser?.uid) {
+      window.alert(TEXT.configMissing);
+      return;
+    }
+    if (!hasMemberAccess()) {
+      window.alert(TEXT.profileSelfUserOnly);
+      return;
+    }
+
+    const name = String(elements.profileNameInput?.value || "").trim();
+    if (!name) {
+      window.alert(TEXT.nameRequired);
+      elements.profileNameInput?.focus();
+      return;
+    }
+
+    const nextProfile = {
+      name,
+      company: String(elements.profileCompanyInput?.value || "").trim(),
+      department: String(elements.profileDepartmentInput?.value || "").trim(),
+      updatedAt: Date.now(),
+    };
+
+    try {
+      await state.db.ref(`users/${state.currentUser.uid}`).update(nextProfile);
+      state.currentUserProfile = {
+        ...state.currentUserProfile,
+        ...nextProfile,
+      };
+      updateAuthUi();
+      closeModal(elements.profileModal);
+      window.alert(TEXT.profileSelfUpdated);
+    } catch (error) {
+      window.alert(`${TEXT.profileSelfUpdateFail}\n${error?.message || ""}`.trim());
+    }
+  }
+
   async function handleLogout() {
     if (!state.auth) {
       return;
@@ -927,15 +1066,23 @@
       openModal(elements.usersModal);
       attachUsersSubscription();
     };
+    const openProfile = () => {
+      prepareProfileModal();
+      openModal(elements.profileModal);
+    };
 
     elements.openSignupButton?.addEventListener("click", openSignup);
     elements.openLoginButton?.addEventListener("click", openLogin);
+    elements.openProfileModalButton?.addEventListener("click", openProfile);
     elements.openUsersModalButton?.addEventListener("click", openUsers);
     elements.openSignupButtonMirrors.forEach((button) => {
       button.addEventListener("click", openSignup);
     });
     elements.openLoginButtonMirrors.forEach((button) => {
       button.addEventListener("click", openLogin);
+    });
+    elements.openProfileModalButtonMirrors.forEach((button) => {
+      button.addEventListener("click", openProfile);
     });
     elements.openUsersModalButtonMirrors.forEach((button) => {
       button.addEventListener("click", openUsers);
@@ -947,6 +1094,8 @@
     });
     elements.signupForm?.addEventListener("submit", handleSignupSubmit);
     elements.loginForm?.addEventListener("submit", handleLoginSubmit);
+    elements.profileForm?.addEventListener("submit", handleProfileSubmit);
+    elements.forgotPasswordButton?.addEventListener("click", handleForgotPassword);
 
     document.querySelectorAll("[data-auth-close]").forEach((button) => {
       button.addEventListener("click", () => {
@@ -959,7 +1108,7 @@
       });
     });
 
-    [elements.signupModal, elements.loginModal, elements.usersModal].forEach((modal) => {
+    [elements.signupModal, elements.loginModal, elements.profileModal, elements.usersModal].forEach((modal) => {
       modal?.addEventListener("click", (event) => {
         if (event.target === modal) {
           closeModal(modal);
@@ -1118,6 +1267,20 @@
           }
 
           return state.db.ref("qualifications").set(listToMap(list)).then(() => true);
+        },
+        saveCertificationExams(list) {
+          if (!state.db || !hasDataAccess()) {
+            return Promise.resolve(false);
+          }
+
+          return state.db.ref("certificationExams").set(listToMap(list)).then(() => true);
+        },
+        saveCertificationExamApplications(list) {
+          if (!state.db || !hasDataAccess()) {
+            return Promise.resolve(false);
+          }
+
+          return state.db.ref("certificationExamApplications").set(listToMap(list)).then(() => true);
         },
         saveEducationSchedules(list) {
           if (!state.db || !hasDataAccess()) {

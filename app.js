@@ -1,12 +1,15 @@
 ﻿const STORAGE_KEY = "innotrack-projects-v2";
 const MILESTONE_STORAGE_KEY = "innotrack-milestones-v1";
 const QUALIFICATION_STORAGE_KEY = "innotrack-qualifications-v1";
+const DASHBOARD_NOTICE_STORAGE_KEY = "innotrack-dashboard-notices-v1";
+const CERTIFICATION_EXAM_STORAGE_KEY = "innotrack-certification-exams-v1";
 const EDUCATION_SCHEDULE_STORAGE_KEY = "innotrack-education-schedules-v1";
 const EDUCATION_ENROLLMENT_STORAGE_KEY = "innotrack-education-enrollments-v1";
 const EDUCATION_COST_DETAIL_STORAGE_KEY = "innotrack-education-cost-details-v1";
 const SURVEY_QUESTION_STORAGE_KEY = "innotrack-survey-questions-v1";
 const SURVEY_RESPONSE_STORAGE_KEY = "innotrack-survey-responses-v1";
 const SURVEY_FORM_STORAGE_KEY = "innotrack-survey-forms-v1";
+const CERTIFICATION_EXAM_APPLICATION_STORAGE_KEY = "innotrack-certification-exam-applications-v1";
 const REFERENCE_DATE = (() => {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -63,6 +66,11 @@ const qualificationGradeOptions = {
   "6σ": ["GB", "BB", "MBB"],
   AICA: ["L2", "L3", "L4"],
   AICE: ["Basic", "Associate", "Professional"],
+};
+const certificationOperationStatusLabels = {
+  planned: "예정",
+  in_progress: "진행중",
+  completed: "완료",
 };
 const csfTypeOptions = [
   "매출 증진",
@@ -153,6 +161,12 @@ const milestones = [
     description: "KPI 실적 연결성과 과제 종료 판정 준비",
     tone: "coral",
   },
+];
+
+const defaultDashboardNoticeItems = [
+  { id: "NOTICE-001", title: "자격검정 접수 일정이 업데이트되었습니다.", date: "2026-04-24" },
+  { id: "NOTICE-002", title: "2분기 교육 환급 정산 점검 안내", date: "2026-04-22" },
+  { id: "NOTICE-003", title: "혁신과제 월간 리뷰 자료 제출 요청", date: "2026-04-20" },
 ];
 
 const defaultQualifications = [
@@ -969,6 +983,9 @@ const defaultSurveyQuestions = [
 let projects = loadProjects();
 let milestoneItems = loadMilestones();
 let qualifications = loadQualifications();
+let dashboardNoticeItems = loadDashboardNotices();
+let certificationExams = loadCertificationExams();
+let certificationExamApplications = loadCertificationExamApplications();
 let surveyForms = loadSurveyForms();
 let educationSchedules = loadEducationSchedules();
 let educationEnrollments = loadEducationEnrollments();
@@ -976,7 +993,7 @@ let educationCostDetailsBySchedule = loadEducationCostDetails();
 let surveyResponses = loadSurveyResponses();
 
 const state = {
-  activePage: "innovation",
+  activePage: "dashboard",
   activeTab: "all",
   search: "",
   company: "all",
@@ -999,8 +1016,12 @@ const state = {
   educationMonth: `${REFERENCE_DATE.getFullYear()}-${String(REFERENCE_DATE.getMonth() + 1).padStart(2, "0")}`,
   selectedEducationDate: toIsoDate(REFERENCE_DATE),
   selectedEducationScheduleId: educationSchedules[0]?.id ?? null,
+  selectedCalendarEventType: "education",
   educationExpandedDate: null,
   educationApplyFormScheduleId: null,
+  certificationApplyFormExamId: null,
+  certificationApplicantScope: "selected",
+  selectedCertificationApplicantIds: [],
   educationAdminStatus: "all",
   educationAdminSearch: "",
   educationAdminYear: String(REFERENCE_DATE.getFullYear()),
@@ -1022,6 +1043,12 @@ const state = {
   editingEducationAdminId: null,
   qualificationModalMode: "create",
   editingQualificationId: null,
+  selectedCertificationExamId: certificationExams[0]?.id ?? null,
+  selectedCertificationExamIds: [],
+  certificationExamModalMode: "create",
+  editingCertificationExamId: null,
+  selectedAdminNoticeId: dashboardNoticeItems[0]?.id ?? null,
+  selectedAdminDashboardMilestoneId: milestoneItems[0]?.id ?? null,
   selectedMilestoneId: milestoneItems[0]?.id ?? null,
   modalMode: "create",
   editingId: null,
@@ -1046,6 +1073,9 @@ const elements = {
   addQualificationButton: document.querySelector("#add-qualification-button"),
   editQualificationButton: document.querySelector("#edit-qualification-button"),
   deleteQualificationButton: document.querySelector("#delete-qualification-button"),
+  addCertificationExamButton: document.querySelector("#add-certification-exam-button"),
+  editCertificationExamButton: document.querySelector("#edit-certification-exam-button"),
+  deleteCertificationExamButton: document.querySelector("#delete-certification-exam-button"),
   navItems: Array.from(document.querySelectorAll("[data-page-target]")),
   navGroupToggles: Array.from(document.querySelectorAll("[data-nav-group-toggle]")),
   educationNavGroupShell: document.querySelector('[data-nav-group-shell="education"]'),
@@ -1071,6 +1101,29 @@ const elements = {
   qualificationGradeFilter: document.querySelector("#qualification-grade-filter"),
   qualificationCompanyFilter: document.querySelector("#qualification-company-filter"),
   qualificationTableBody: document.querySelector("#qualification-table-body"),
+  certificationExamTableBody: document.querySelector("#certification-exam-table-body"),
+  certificationExamDetailCard: document.querySelector("#certification-exam-detail-card"),
+  certificationApplicantSelectedMeta: document.querySelector("#certification-applicant-selected-meta"),
+  certificationApplicantScopeFilter: document.querySelector("#certification-applicant-scope-filter"),
+  certificationApplicantTableBody: document.querySelector("#certification-applicant-table-body"),
+  certificationApplicantCompleteButton: document.querySelector("#certification-applicant-complete-button"),
+  certificationApplicantCancelCompleteButton: document.querySelector("#certification-applicant-cancel-complete-button"),
+  certificationApplicantDeleteButton: document.querySelector("#certification-applicant-delete-button"),
+  dashboardNoticeList: document.querySelector("#dashboard-notice-list"),
+  dashboardMilestoneList: document.querySelector("#dashboard-milestone-list"),
+  dashboardInnovationCompanyChart: document.querySelector("#dashboard-innovation-company-chart"),
+  dashboardQualificationStackedChart: document.querySelector("#dashboard-qualification-stacked-chart"),
+  dashboardQualificationYearlyChart: document.querySelector("#dashboard-qualification-yearly-chart"),
+  dashboardCertificationPassChart: document.querySelector("#dashboard-certification-pass-chart"),
+  dashboardEducationKpiChart: document.querySelector("#dashboard-education-kpi-chart"),
+  adminNoticeTableBody: document.querySelector("#admin-notice-table-body"),
+  adminAddNoticeButton: document.querySelector("#admin-add-notice-button"),
+  adminEditNoticeButton: document.querySelector("#admin-edit-notice-button"),
+  adminDeleteNoticeButton: document.querySelector("#admin-delete-notice-button"),
+  adminDashboardMilestoneTableBody: document.querySelector("#admin-dashboard-milestone-table-body"),
+  adminAddDashboardMilestoneButton: document.querySelector("#admin-add-dashboard-milestone-button"),
+  adminEditDashboardMilestoneButton: document.querySelector("#admin-edit-dashboard-milestone-button"),
+  adminDeleteDashboardMilestoneButton: document.querySelector("#admin-delete-dashboard-milestone-button"),
   qualificationPagination: document.querySelector("#qualification-pagination"),
   milestoneList: document.querySelector("#milestone-list"),
   addMilestoneButton: document.querySelector("#add-milestone-button"),
@@ -1093,6 +1146,12 @@ const elements = {
   qualificationModalClose: document.querySelector("#qualification-modal-close"),
   projectFormCancel: document.querySelector("#project-form-cancel"),
   qualificationFormCancel: document.querySelector("#qualification-form-cancel"),
+  certificationExamModal: document.querySelector("#certification-exam-modal"),
+  certificationExamModalTitle: document.querySelector("#certification-exam-modal-title"),
+  certificationExamForm: document.querySelector("#certification-exam-form"),
+  certificationExamFormSubmit: document.querySelector("#certification-exam-form-submit"),
+  certificationExamModalClose: document.querySelector("#certification-exam-modal-close"),
+  certificationExamFormCancel: document.querySelector("#certification-exam-form-cancel"),
   projectName: document.querySelector("#project-name"),
   projectCompany: document.querySelector("#project-company"),
   qualificationType: document.querySelector("#qualification-type"),
@@ -1102,6 +1161,20 @@ const elements = {
   qualificationDepartment: document.querySelector("#qualification-department"),
   qualificationName: document.querySelector("#qualification-name"),
   qualificationAcquiredDate: document.querySelector("#qualification-acquired-date"),
+  certificationExamTitle: document.querySelector("#certification-exam-title"),
+  certificationExamType: document.querySelector("#certification-exam-type"),
+  certificationExamGrade: document.querySelector("#certification-exam-grade"),
+  certificationExamTarget: document.querySelector("#certification-exam-target"),
+  certificationExamRequirement: document.querySelector("#certification-exam-requirement"),
+  certificationExamPassCriteria: document.querySelector("#certification-exam-pass-criteria"),
+  certificationExamApplicationStartDate: document.querySelector("#certification-exam-application-start-date"),
+  certificationExamApplicationEndDate: document.querySelector("#certification-exam-application-end-date"),
+  certificationExamDateTime: document.querySelector("#certification-exam-datetime"),
+  certificationExamResultDate: document.querySelector("#certification-exam-result-date"),
+  certificationExamLocation: document.querySelector("#certification-exam-location"),
+  certificationExamCapacity: document.querySelector("#certification-exam-capacity"),
+  certificationExamStatus: document.querySelector("#certification-exam-status"),
+  certificationExamNote: document.querySelector("#certification-exam-note"),
   projectDepartment: document.querySelector("#project-department"),
   projectLeader: document.querySelector("#project-leader"),
   projectRole: document.querySelector("#project-role"),
@@ -1523,12 +1596,10 @@ function configureEducationAdminFormControls() {
     }
   }
   setEducationAdminFieldSpan(elements.educationAdminOperatorDept, 3);
-  const recommendedWrapper = elements.educationAdminRecommendedTarget?.closest(".form-field");
   const surveyFormWrapper = elements.educationAdminSurveyForm?.closest(".form-field");
-  const operatorWrapper = elements.educationAdminOperatorDept?.closest(".form-field");
-  if (recommendedWrapper && surveyFormWrapper && operatorWrapper) {
-    recommendedWrapper.insertAdjacentElement("afterend", surveyFormWrapper);
-    surveyFormWrapper.insertAdjacentElement("afterend", operatorWrapper);
+  const statusWrapper = elements.educationAdminStatusField?.closest(".form-field");
+  if (surveyFormWrapper && statusWrapper) {
+    statusWrapper.insertAdjacentElement("afterend", surveyFormWrapper);
   }
 
   const hoursWrapper = elements.educationAdminHoursText?.closest(".form-field");
@@ -2516,6 +2587,61 @@ function normalizeQualification(qualification, fallbackId = "") {
   };
 }
 
+function normalizeCertificationOperationStatus(status) {
+  return Object.prototype.hasOwnProperty.call(certificationOperationStatusLabels, status)
+    ? status
+    : "planned";
+}
+
+function normalizeCertificationExam(exam, fallbackId = "") {
+  const examType = qualificationTypeOptions.includes(exam.examType)
+    ? exam.examType
+    : qualificationTypeOptions[0];
+  const gradeOptions = getQualificationGradeList(examType);
+  const examGrade = gradeOptions.includes(exam.examGrade) ? exam.examGrade : (gradeOptions[0] || "");
+  const legacyTitle = [exam.qualificationType, exam.grade].filter(Boolean).join(" ");
+  const examTitle = String(exam.examTitle || legacyTitle || "").trim();
+  const targetAudience = String(exam.targetAudience || exam.name || "").trim();
+  const qualificationRequirement = String(exam.qualificationRequirement || "").trim();
+  const passCriteria = String(exam.passCriteria || exam.certificateNo || "").trim();
+  const applicationStartDate = isValidDateString(exam.applicationStartDate)
+    ? exam.applicationStartDate
+    : toIsoDate(REFERENCE_DATE);
+  const applicationEndDate = isValidDateString(exam.applicationEndDate)
+    ? exam.applicationEndDate
+    : applicationStartDate;
+  const safeApplicationEndDate = parseDate(applicationEndDate) >= parseDate(applicationStartDate)
+    ? applicationEndDate
+    : applicationStartDate;
+  const examDateTime = String(exam.examDateTime || "").trim();
+  const resultAnnouncementDate = isValidDateString(exam.resultAnnouncementDate)
+    ? exam.resultAnnouncementDate
+    : safeApplicationEndDate;
+  const capacity = Math.max(1, Math.round(parseNumber(exam.capacity, 30)));
+  const applicantsCount = Math.max(0, Math.round(parseNumber(exam.applicantsCount, 0)));
+  const passedCount = Math.max(0, Math.round(parseNumber(exam.passedCount, 0)));
+
+  return {
+    id: exam.id || fallbackId || generateCertificationExamId(),
+    examType,
+    examGrade,
+    examTitle,
+    targetAudience,
+    qualificationRequirement,
+    passCriteria,
+    applicationStartDate,
+    applicationEndDate: safeApplicationEndDate,
+    examDateTime,
+    resultAnnouncementDate,
+    capacity,
+    applicantsCount,
+    passedCount,
+    examLocation: String(exam.examLocation || exam.company || "").trim(),
+    operationStatus: normalizeCertificationOperationStatus(exam.operationStatus),
+    note: String(exam.note || "").trim(),
+  };
+}
+
 function normalizeEducationSchedule(schedule, fallbackId = "") {
   const defaultCourseId = educationCoursesMaster[0]?.id || "";
   const hasCourse = educationCoursesMaster.some((course) => course.id === schedule.courseId);
@@ -2776,6 +2902,90 @@ function loadQualifications() {
   }
 }
 
+function loadCertificationExams() {
+  try {
+    const stored = window.localStorage.getItem(CERTIFICATION_EXAM_STORAGE_KEY);
+    if (!stored) {
+      return [];
+    }
+
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.map((exam, index) =>
+      normalizeCertificationExam(exam, `CEX-${String(index + 1).padStart(3, "0")}`));
+  } catch (error) {
+    return [];
+  }
+}
+
+function loadCertificationExamApplications() {
+  try {
+    const stored = window.localStorage.getItem(CERTIFICATION_EXAM_APPLICATION_STORAGE_KEY);
+    if (!stored) {
+      return [];
+    }
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map((item, index) => ({
+        id: String(item?.id || `CEX-APP-${String(index + 1).padStart(3, "0")}`).trim(),
+        examId: String(item?.examId || "").trim(),
+        employeeId: String(item?.employeeId || "").trim(),
+        company: String(item?.company || "").trim(),
+        department: String(item?.department || "").trim(),
+        name: String(item?.name || "").trim(),
+        position: String(item?.position || "").trim(),
+        email: String(item?.email || "").trim(),
+        phone: String(item?.phone || "").trim(),
+        certificateNo: String(item?.certificateNo || "").trim(),
+        acquiredDate: isValidDateString(item?.acquiredDate) ? item.acquiredDate : "",
+        completed: Boolean(item?.completed),
+        qualificationId: String(item?.qualificationId || "").trim(),
+        appliedAt: isValidDateString(item?.appliedAt) ? item.appliedAt : toIsoDate(REFERENCE_DATE),
+      }))
+      .filter((item) => item.examId);
+  } catch (error) {
+    return [];
+  }
+}
+
+function loadDashboardNotices() {
+  try {
+    const stored = window.localStorage.getItem(DASHBOARD_NOTICE_STORAGE_KEY);
+    if (!stored) {
+      return defaultDashboardNoticeItems.map((item, index) => ({
+        id: item.id || `NOTICE-${String(index + 1).padStart(3, "0")}`,
+        title: String(item.title || "").trim(),
+        date: isValidDateString(item.date) ? item.date : toIsoDate(REFERENCE_DATE),
+      }));
+    }
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed) || !parsed.length) {
+      return defaultDashboardNoticeItems.map((item, index) => ({
+        id: item.id || `NOTICE-${String(index + 1).padStart(3, "0")}`,
+        title: String(item.title || "").trim(),
+        date: isValidDateString(item.date) ? item.date : toIsoDate(REFERENCE_DATE),
+      }));
+    }
+    return parsed.map((item, index) => ({
+      id: String(item?.id || `NOTICE-${String(index + 1).padStart(3, "0")}`).trim(),
+      title: String(item?.title || "").trim() || `공지 ${index + 1}`,
+      date: isValidDateString(item?.date) ? item.date : toIsoDate(REFERENCE_DATE),
+    }));
+  } catch (error) {
+    return defaultDashboardNoticeItems.map((item, index) => ({
+      id: item.id || `NOTICE-${String(index + 1).padStart(3, "0")}`,
+      title: String(item.title || "").trim(),
+      date: isValidDateString(item.date) ? item.date : toIsoDate(REFERENCE_DATE),
+    }));
+  }
+}
+
 function normalizeSurveyQuestion(question, fallbackId = "", fallbackOrder = 1) {
   const type = String(question?.type || "scale").toLowerCase() === "text" ? "text" : "scale";
   const text = String(question?.text || "").trim();
@@ -2940,6 +3150,42 @@ function saveQualifications() {
   }
 }
 
+function saveCertificationExams() {
+  try {
+    window.localStorage.setItem(CERTIFICATION_EXAM_STORAGE_KEY, JSON.stringify(certificationExams));
+  } catch (error) {
+    // local fallback only
+  }
+
+  try {
+    window.innotrackFirebase?.saveCertificationExams?.(certificationExams);
+  } catch (error) {
+    // ignore remote sync failures and keep local persistence
+  }
+}
+
+function saveCertificationExamApplications() {
+  try {
+    window.localStorage.setItem(CERTIFICATION_EXAM_APPLICATION_STORAGE_KEY, JSON.stringify(certificationExamApplications));
+  } catch (error) {
+    // local fallback only
+  }
+
+  try {
+    window.innotrackFirebase?.saveCertificationExamApplications?.(certificationExamApplications);
+  } catch (error) {
+    // ignore remote sync failures and keep local persistence
+  }
+}
+
+function saveDashboardNotices() {
+  try {
+    window.localStorage.setItem(DASHBOARD_NOTICE_STORAGE_KEY, JSON.stringify(dashboardNoticeItems));
+  } catch (error) {
+    // local fallback only
+  }
+}
+
 function saveEducationSchedules() {
   try {
     window.localStorage.setItem(EDUCATION_SCHEDULE_STORAGE_KEY, JSON.stringify(educationSchedules));
@@ -3034,6 +3280,22 @@ function persistQualificationsLocally() {
   }
 }
 
+function persistCertificationExamsLocally() {
+  try {
+    window.localStorage.setItem(CERTIFICATION_EXAM_STORAGE_KEY, JSON.stringify(certificationExams));
+  } catch (error) {
+    return;
+  }
+}
+
+function persistCertificationExamApplicationsLocally() {
+  try {
+    window.localStorage.setItem(CERTIFICATION_EXAM_APPLICATION_STORAGE_KEY, JSON.stringify(certificationExamApplications));
+  } catch (error) {
+    return;
+  }
+}
+
 function persistEducationSchedulesLocally() {
   try {
     window.localStorage.setItem(EDUCATION_SCHEDULE_STORAGE_KEY, JSON.stringify(educationSchedules));
@@ -3099,6 +3361,45 @@ function replaceQualificationsFromExternal(list = []) {
     ?? qualifications[0]?.id
     ?? null;
   persistQualificationsLocally();
+  render();
+}
+
+function replaceCertificationExamsFromExternal(list = []) {
+  const sourceList = Array.isArray(list) ? list : [];
+  certificationExams = sourceList.map((exam, index) =>
+    normalizeCertificationExam(exam, `CEX-${String(index + 1).padStart(3, "0")}`));
+  pruneSelectedCertificationExamIds();
+  state.selectedCertificationExamId = certificationExams.find((exam) => exam.id === state.selectedCertificationExamId)?.id
+    ?? certificationExams[0]?.id
+    ?? null;
+  persistCertificationExamsLocally();
+  render();
+}
+
+function replaceCertificationExamApplicationsFromExternal(list = []) {
+  const sourceList = Array.isArray(list) ? list : [];
+  certificationExamApplications = sourceList
+    .map((item, index) => ({
+      id: String(item?.id || `CEX-APP-${String(index + 1).padStart(3, "0")}`).trim(),
+      examId: String(item?.examId || "").trim(),
+      employeeId: String(item?.employeeId || "").trim(),
+      company: String(item?.company || "").trim(),
+      department: String(item?.department || "").trim(),
+      name: String(item?.name || "").trim(),
+      position: String(item?.position || "").trim(),
+      email: String(item?.email || "").trim(),
+      phone: String(item?.phone || "").trim(),
+      certificateNo: String(item?.certificateNo || "").trim(),
+      acquiredDate: isValidDateString(item?.acquiredDate) ? item.acquiredDate : "",
+      completed: Boolean(item?.completed),
+      qualificationId: String(item?.qualificationId || "").trim(),
+      appliedAt: isValidDateString(item?.appliedAt) ? item.appliedAt : toIsoDate(REFERENCE_DATE),
+    }))
+    .filter((item) => item.examId);
+
+  state.selectedCertificationApplicantIds = state.selectedCertificationApplicantIds
+    .filter((id) => certificationExamApplications.some((item) => item.id === id));
+  persistCertificationExamApplicationsLocally();
   render();
 }
 
@@ -3195,6 +3496,15 @@ function generateQualificationId() {
   return `QL-${String(nextIndex).padStart(3, "0")}`;
 }
 
+function generateCertificationExamId() {
+  const nextIndex = certificationExams.reduce((max, exam) => {
+    const numeric = Number(String(exam.id || "").split("-").pop());
+    return Number.isFinite(numeric) ? Math.max(max, numeric) : max;
+  }, 0) + 1;
+
+  return `CEX-${String(nextIndex).padStart(3, "0")}`;
+}
+
 function generateEducationScheduleId() {
   const nextIndex = educationSchedules.reduce((max, schedule) => {
     const numeric = Number(String(schedule.id || "").split("-").pop());
@@ -3212,6 +3522,10 @@ function getQualificationById(qualificationId) {
   return qualifications.find((qualification) => qualification.id === qualificationId) || null;
 }
 
+function getCertificationExamById(examId) {
+  return certificationExams.find((exam) => exam.id === examId) || null;
+}
+
 function getSelectedQualificationIds() {
   return Array.isArray(state.selectedQualificationIds) ? state.selectedQualificationIds : [];
 }
@@ -3220,10 +3534,20 @@ function getSelectedEducationAdminIds() {
   return Array.isArray(state.selectedEducationAdminIds) ? state.selectedEducationAdminIds : [];
 }
 
+function getSelectedCertificationExamIds() {
+  return Array.isArray(state.selectedCertificationExamIds) ? state.selectedCertificationExamIds : [];
+}
+
 function pruneSelectedQualificationIds() {
   const validIdSet = new Set(qualifications.map((qualification) => qualification.id));
   state.selectedQualificationIds = getSelectedQualificationIds()
     .filter((qualificationId) => validIdSet.has(qualificationId));
+}
+
+function pruneSelectedCertificationExamIds() {
+  const validIdSet = new Set(certificationExams.map((exam) => exam.id));
+  state.selectedCertificationExamIds = getSelectedCertificationExamIds()
+    .filter((examId) => validIdSet.has(examId));
 }
 
 function pruneSelectedEducationAdminIds() {
@@ -3234,6 +3558,10 @@ function pruneSelectedEducationAdminIds() {
 
 function hasCheckedQualification(qualificationId) {
   return getSelectedQualificationIds().includes(qualificationId);
+}
+
+function hasCheckedCertificationExam(examId) {
+  return getSelectedCertificationExamIds().includes(examId);
 }
 
 function hasCheckedEducationAdmin(scheduleId) {
@@ -3262,6 +3590,17 @@ function toggleCheckedQualification(qualificationId) {
   }
 
   state.selectedQualificationIds = [...currentIds, qualificationId];
+}
+
+function toggleCheckedCertificationExam(examId) {
+  const currentIds = getSelectedCertificationExamIds();
+
+  if (currentIds.includes(examId)) {
+    state.selectedCertificationExamIds = currentIds.filter((id) => id !== examId);
+    return;
+  }
+
+  state.selectedCertificationExamIds = [...currentIds, examId];
 }
 
 function toggleCheckedEducationAdmin(scheduleId) {
@@ -3385,6 +3724,291 @@ function getEducationCalendarChipStatus(schedule, referenceDate = REFERENCE_DATE
     return { label: "접수중", className: "is-open", icon: "🟢" };
   }
   return { label: "접수완료", className: "is-done", icon: "🔒" };
+}
+
+function getCertificationExamCalendarChipStatus(exam, referenceDate = REFERENCE_DATE) {
+  const referenceToken = referenceDate instanceof Date
+    ? toIsoDate(referenceDate)
+    : (isValidDateString(referenceDate) ? referenceDate : toIsoDate(REFERENCE_DATE));
+  const examDateToken = isValidDateString(String(exam?.examDateTime || "").slice(0, 10))
+    ? String(exam.examDateTime).slice(0, 10)
+    : referenceToken;
+  if (referenceToken > examDateToken) {
+    return { label: "시험종료", className: "is-ended", icon: "✅" };
+  }
+
+  const startDate = isValidDateString(exam?.applicationStartDate) ? exam.applicationStartDate : examDateToken;
+  const endDateSource = isValidDateString(exam?.applicationEndDate) ? exam.applicationEndDate : startDate;
+  const endDate = parseDate(endDateSource) >= parseDate(startDate) ? endDateSource : startDate;
+  if (referenceToken < startDate) {
+    return { label: "접수예정", className: "is-planned", icon: "🕒" };
+  }
+  if (referenceToken > endDate) {
+    return { label: "접수완료", className: "is-done", icon: "🔒" };
+  }
+  return { label: "접수중", className: "is-open", icon: "🟢" };
+}
+
+function getCertificationExamsOnDate(dateToken, sourceExams = certificationExams) {
+  if (!isValidDateString(dateToken)) {
+    return [];
+  }
+  return sourceExams.filter((exam) => String(exam.examDateTime || "").slice(0, 10) === dateToken);
+}
+
+function getCertificationExamApplicationCount(examId) {
+  if (!examId) {
+    return 0;
+  }
+  return certificationExamApplications.filter((item) => item.examId === examId).length;
+}
+
+function getCertificationExamPassedCount(examId) {
+  if (!examId) {
+    return 0;
+  }
+  return certificationExamApplications.filter((item) => item.examId === examId && item.completed).length;
+}
+
+function getCertificationExamApplicationById(applicationId) {
+  return certificationExamApplications.find((item) => item.id === applicationId) || null;
+}
+
+function getSelectedCertificationApplicantIds() {
+  return Array.isArray(state.selectedCertificationApplicantIds) ? state.selectedCertificationApplicantIds : [];
+}
+
+function hasCheckedCertificationApplicant(applicationId) {
+  return getSelectedCertificationApplicantIds().includes(applicationId);
+}
+
+function toggleCheckedCertificationApplicant(applicationId) {
+  const currentIds = getSelectedCertificationApplicantIds();
+  if (currentIds.includes(applicationId)) {
+    state.selectedCertificationApplicantIds = currentIds.filter((id) => id !== applicationId);
+    return;
+  }
+  state.selectedCertificationApplicantIds = [...currentIds, applicationId];
+}
+
+function pruneSelectedCertificationApplicantIds() {
+  const validIdSet = new Set(certificationExamApplications.map((item) => item.id));
+  state.selectedCertificationApplicantIds = getSelectedCertificationApplicantIds()
+    .filter((applicationId) => validIdSet.has(applicationId));
+}
+
+function updateCertificationExamApplicationField(applicationId, field, value) {
+  const index = certificationExamApplications.findIndex((item) => item.id === applicationId);
+  if (index < 0) {
+    return;
+  }
+
+  if (field === "certificateNo") {
+    certificationExamApplications[index].certificateNo = String(value || "").trim();
+  } else if (field === "acquiredDate") {
+    certificationExamApplications[index].acquiredDate = isValidDateString(value) ? value : "";
+  }
+  saveCertificationExamApplications();
+}
+
+function deleteCertificationExamApplication(applicationId) {
+  const target = getCertificationExamApplicationById(applicationId);
+  if (!target) {
+    return;
+  }
+  const shouldDelete = window.confirm("선택한 시험 접수 내역을 삭제할까요?");
+  if (!shouldDelete) {
+    return;
+  }
+  certificationExamApplications = certificationExamApplications.filter((item) => item.id !== applicationId);
+  pruneSelectedCertificationApplicantIds();
+  saveCertificationExamApplications();
+  render();
+}
+
+function deleteCertificationExamApplications(applicationIds = []) {
+  const targetIds = Array.from(new Set(
+    applicationIds.filter((applicationId) => getCertificationExamApplicationById(applicationId)),
+  ));
+  if (!targetIds.length) {
+    return;
+  }
+  const shouldDelete = window.confirm(`선택한 접수 내역 ${targetIds.length}건을 삭제할까요?`);
+  if (!shouldDelete) {
+    return;
+  }
+  certificationExamApplications = certificationExamApplications.filter((item) => !targetIds.includes(item.id));
+  pruneSelectedCertificationApplicantIds();
+  saveCertificationExamApplications();
+  render();
+}
+
+function completeCertificationExamApplication(applicationId, options = {}) {
+  const { silent = false } = options;
+  const application = getCertificationExamApplicationById(applicationId);
+  if (!application) {
+    return false;
+  }
+  if (application.completed) {
+    if (!silent) {
+      window.alert("이미 합격 처리된 내역입니다.");
+    }
+    return false;
+  }
+  if (!application.certificateNo) {
+    if (!silent) {
+      window.alert("자격증번호를 입력해 주세요.");
+    }
+    return false;
+  }
+  if (!isValidDateString(application.acquiredDate)) {
+    if (!silent) {
+      window.alert("취득일자를 입력해 주세요.");
+    }
+    return false;
+  }
+
+  const exam = getCertificationExamById(application.examId);
+  if (!exam) {
+    if (!silent) {
+      window.alert("연결된 시험 정보를 찾을 수 없습니다.");
+    }
+    return false;
+  }
+
+  const normalizedQualification = normalizeQualification({
+    qualificationType: exam.examType,
+    grade: exam.examGrade,
+    certificateNo: application.certificateNo,
+    company: application.company,
+    department: application.department,
+    name: application.name,
+    acquiredDate: application.acquiredDate,
+  });
+  qualifications.unshift(normalizedQualification);
+  saveQualifications();
+
+  const index = certificationExamApplications.findIndex((item) => item.id === applicationId);
+  if (index >= 0) {
+    certificationExamApplications[index].completed = true;
+    certificationExamApplications[index].qualificationId = normalizedQualification.id;
+  }
+  saveCertificationExamApplications();
+  if (!silent) {
+    window.alert("합격 처리되어 자격현황에 반영되었습니다.");
+    render();
+  }
+  return true;
+}
+
+function cancelCertificationExamCompletion(applicationId, options = {}) {
+  const { silent = false } = options;
+  const application = getCertificationExamApplicationById(applicationId);
+  if (!application) {
+    return false;
+  }
+  if (!application.completed) {
+    if (!silent) {
+      window.alert("아직 합격 처리되지 않은 내역입니다.");
+    }
+    return false;
+  }
+
+  const qualificationId = String(application.qualificationId || "").trim();
+  const exam = getCertificationExamById(application.examId);
+  let removed = false;
+
+  if (qualificationId) {
+    const beforeCount = qualifications.length;
+    qualifications = qualifications.filter((qualification) => qualification.id !== qualificationId);
+    removed = qualifications.length !== beforeCount;
+  }
+
+  // Backward compatibility: previously completed records may not have qualificationId.
+  // In that case, remove by matching key fields generated during "합격" 처리.
+  if (!removed) {
+    const beforeCount = qualifications.length;
+    const examType = String(exam?.examType || "").trim();
+    const examGrade = String(exam?.examGrade || "").trim();
+    const certificateNo = String(application.certificateNo || "").trim();
+    const acquiredDate = String(application.acquiredDate || "").trim();
+    const name = String(application.name || "").trim();
+    const company = String(application.company || "").trim();
+    const department = String(application.department || "").trim();
+
+    qualifications = qualifications.filter((qualification) => {
+      const isCandidate =
+        String(qualification.qualificationType || "").trim() === examType
+        && String(qualification.grade || "").trim() === examGrade
+        && String(qualification.certificateNo || "").trim() === certificateNo
+        && String(qualification.acquiredDate || "").trim() === acquiredDate
+        && String(qualification.name || "").trim() === name
+        && String(qualification.company || "").trim() === company
+        && String(qualification.department || "").trim() === department;
+      return !isCandidate;
+    });
+    removed = qualifications.length !== beforeCount;
+  }
+
+  if (removed) {
+    saveQualifications();
+  }
+
+  const index = certificationExamApplications.findIndex((item) => item.id === applicationId);
+  if (index >= 0) {
+    certificationExamApplications[index].completed = false;
+    certificationExamApplications[index].qualificationId = "";
+  }
+  saveCertificationExamApplications();
+  if (!silent) {
+    window.alert("합격 처리가 취소되어 자격현황에서 제거되었습니다.");
+    render();
+  }
+  return true;
+}
+
+function completeCertificationExamApplications(applicationIds = []) {
+  const targetIds = Array.from(new Set(
+    applicationIds.filter((applicationId) => getCertificationExamApplicationById(applicationId)),
+  ));
+  if (!targetIds.length) {
+    return;
+  }
+  let successCount = 0;
+  targetIds.forEach((applicationId) => {
+    if (completeCertificationExamApplication(applicationId, { silent: true })) {
+      successCount += 1;
+    }
+  });
+  if (successCount === 0) {
+    window.alert("합격 처리할 수 있는 내역이 없습니다. 자격증번호/취득일자를 확인해 주세요.");
+    return;
+  }
+  pruneSelectedCertificationApplicantIds();
+  window.alert(`${successCount}건이 합격 처리되어 자격현황에 반영되었습니다.`);
+  render();
+}
+
+function cancelCertificationExamCompletions(applicationIds = []) {
+  const targetIds = Array.from(new Set(
+    applicationIds.filter((applicationId) => getCertificationExamApplicationById(applicationId)),
+  ));
+  if (!targetIds.length) {
+    return;
+  }
+  let successCount = 0;
+  targetIds.forEach((applicationId) => {
+    if (cancelCertificationExamCompletion(applicationId, { silent: true })) {
+      successCount += 1;
+    }
+  });
+  if (successCount === 0) {
+    window.alert("합격취소할 수 있는 내역이 없습니다.");
+    return;
+  }
+  pruneSelectedCertificationApplicantIds();
+  window.alert(`${successCount}건의 합격 처리가 취소되어 자격현황에서 제거되었습니다.`);
+  render();
 }
 
 function getEducationAdminListStatusInfo(status) {
@@ -3878,6 +4502,58 @@ function applyEducationSchedule(scheduleId, applicationDraft = {}) {
   render();
 }
 
+function generateCertificationExamApplicationId() {
+  const nextIndex = certificationExamApplications.reduce((max, item) => {
+    const numeric = Number(String(item.id || "").split("-").pop());
+    return Number.isFinite(numeric) ? Math.max(max, numeric) : max;
+  }, 0) + 1;
+  return `CEX-APP-${String(nextIndex).padStart(3, "0")}`;
+}
+
+function applyCertificationExam(examId, applicationDraft = {}) {
+  const exam = getCertificationExamById(examId);
+  if (!exam) {
+    return;
+  }
+  if (!hasEducationApplyAccess()) {
+    window.alert("시험 접수는 승인된 사용자 계정에서만 가능합니다.");
+    return;
+  }
+  const identity = getEducationCurrentIdentity();
+  const status = getCertificationExamCalendarChipStatus(exam);
+  if (status.label !== "접수중") {
+    window.alert("접수 가능 기간이 아닙니다.");
+    return;
+  }
+  const alreadyApplied = certificationExamApplications.some((item) =>
+    item.examId === examId && item.employeeId === identity.employeeId
+  );
+  if (alreadyApplied) {
+    window.alert("이미 접수한 시험입니다.");
+    return;
+  }
+
+  certificationExamApplications.unshift({
+    id: generateCertificationExamApplicationId(),
+    examId,
+    employeeId: identity.employeeId,
+    company: identity.company,
+    department: identity.department,
+    name: identity.name,
+    position: String(applicationDraft.position || identity.position || "").trim(),
+    email: String(applicationDraft.email || identity.email || "").trim(),
+    phone: String(applicationDraft.phone || identity.phone || "").trim(),
+    certificateNo: "",
+    acquiredDate: "",
+    completed: false,
+    qualificationId: "",
+    appliedAt: toIsoDate(REFERENCE_DATE),
+  });
+  saveCertificationExamApplications();
+  window.alert("시험 접수가 완료되었습니다.");
+  render();
+}
+
 function markEducationSettlementDone(scheduleId) {
   const index = educationSchedules.findIndex((schedule) => schedule.id === scheduleId);
   if (index < 0) {
@@ -3981,15 +4657,15 @@ function setActivePage(page) {
     window.alert("교육/학습 페이지는 승인된 사용자 계정에서만 이용할 수 있습니다.");
     nextPage = "innovation";
   }
-  if ((nextPage === "education-admin" || nextPage === "survey-management") && !hasEducationAdminAccess()) {
-    window.alert("교육관리/설문관리 페이지는 관리자 권한이 필요합니다.");
+  if ((nextPage === "education-admin" || nextPage === "certification-management" || nextPage === "survey-management") && !hasEducationAdminAccess()) {
+    window.alert("교육관리/자격검정관리/설문관리 페이지는 관리자 권한이 필요합니다.");
     nextPage = "innovation";
   }
   if (nextPage === "admin" && !hasEducationAdminAccess()) {
     window.alert("관리자 전용 페이지는 관리자 권한이 필요합니다.");
     nextPage = "innovation";
   }
-  const educationPages = ["education-calendar", "my-learning", "education-admin", "survey-management"];
+  const educationPages = ["education-calendar", "my-learning", "education-admin", "certification-management", "survey-management"];
   const isEducationPage = educationPages.includes(nextPage);
   state.activePage = nextPage;
 
@@ -4030,11 +4706,15 @@ function setActivePage(page) {
   if (nextPage !== "education-admin") {
     closeEducationAdminModal();
   }
+
+  if (nextPage !== "certification-management") {
+    closeCertificationExamModal();
+  }
 }
 
 function syncEducationAdminMenuVisibility() {
   const canAccess = hasEducationAdminAccess();
-  const adminMenuTargets = ["education-admin", "survey-management", "admin"];
+  const adminMenuTargets = ["education-admin", "certification-management", "survey-management", "admin"];
   adminMenuTargets.forEach((target) => {
     const menuButton = elements.navItems.find((button) => button.dataset.pageTarget === target);
     if (menuButton) {
@@ -4095,9 +4775,17 @@ function buildCompanyOptions() {
       .map((type) => `<option value="${type}">${type}</option>`)
       .join("");
   }
+  if (elements.certificationExamType) {
+    elements.certificationExamType.innerHTML = qualificationTypeOptions
+      .map((type) => `<option value="${type}">${type}</option>`)
+      .join("");
+  }
 
   renderQualificationGradeFilterOptions();
   renderQualificationGradeFieldOptions(elements.qualificationType?.value || qualificationTypeOptions[0]);
+  if (elements.certificationExamType) {
+    renderCertificationExamGradeFieldOptions(elements.certificationExamType.value || qualificationTypeOptions[0]);
+  }
 }
 
 function getProjectYearOptions() {
@@ -4235,6 +4923,246 @@ function renderMetrics() {
   elements.metricProgress.textContent = `${averageProgress}%`;
 }
 
+function renderDashboardSimpleList(targetNode, items = [], emptyMessage = "표시할 항목이 없습니다.", options = {}) {
+  const { showTypeBadge = false } = options;
+  if (!targetNode) {
+    return;
+  }
+  if (!items.length) {
+    targetNode.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
+    return;
+  }
+  targetNode.innerHTML = items.map((item, index) => `
+    <article style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:5px 4px;margin:0;background:transparent;border-bottom:${index < items.length - 1 ? "1px solid #e9f1ff" : "none"};">
+      <div style="display:grid;grid-template-columns:${showTypeBadge ? "auto 1fr" : "1fr"};gap:${showTypeBadge ? "8px" : "0"};align-items:center;min-width:0;">
+        ${showTypeBadge
+    ? `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:34px;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:800;line-height:1;white-space:nowrap;color:${item.type === "exam" ? "#15503a" : "#1b4f9d"};background:${item.type === "exam" ? "#e8f8f0" : "#e9f1ff"};">${item.type === "exam" ? "시험" : "교육"}</span>`
+    : ""}
+        <p style="margin:0;font-weight:600;font-size:15px;color:#102f63;line-height:1.2;min-width:0;">${escapeHtml(item.title || "-")}</p>
+      </div>
+      <span style="font-size:12px;font-weight:600;color:#5e79a5;white-space:nowrap;line-height:1;">${escapeHtml(formatDateWithYear(item.date || toIsoDate(REFERENCE_DATE)))}</span>
+    </article>
+  `).join("");
+}
+
+function renderDashboardBarList(targetNode, rows = [], valueSuffix = "", emptyMessage = "데이터가 없습니다.") {
+  if (!targetNode) {
+    return;
+  }
+  if (!rows.length) {
+    targetNode.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
+    return;
+  }
+  const maxValue = rows.reduce((max, row) => Math.max(max, parseNumber(row.value, 0)), 0) || 1;
+  targetNode.innerHTML = rows.map((row) => {
+    const value = Math.max(0, parseNumber(row.value, 0));
+    const width = Math.max(4, Math.round((value / maxValue) * 100));
+    return `
+      <div style="display:grid;grid-template-columns:140px 1fr auto;gap:12px;align-items:center;margin:8px 0;">
+        <strong>${escapeHtml(row.label)}</strong>
+        <div style="height:10px;background:#eef4ff;border-radius:999px;overflow:hidden;">
+          <span style="display:block;height:100%;width:${width}%;background:#2f6df6;border-radius:999px;"></span>
+        </div>
+        <span>${escapeHtml(`${value}${valueSuffix}`)}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderDashboardPage() {
+  renderDashboardSimpleList(
+    elements.dashboardNoticeList,
+    dashboardNoticeItems
+      .slice()
+      .sort((left, right) => String(right.date).localeCompare(String(left.date)))
+      .slice(0, 7),
+    "등록된 공지사항이 없습니다.",
+  );
+
+  const todayToken = toIsoDate(REFERENCE_DATE);
+  const calendarEvents = [
+    ...educationSchedules
+      .filter((schedule) => isValidDateString(schedule.startDate))
+      .map((schedule) => ({
+        title: getEducationAdminDisplayCourseName(schedule, getEducationCourseById(schedule.courseId)),
+        date: schedule.startDate,
+        type: "education",
+      })),
+    ...certificationExams
+      .map((exam) => ({
+        title: exam.examTitle || `${exam.examType || "시험"} ${exam.examGrade || ""}`.trim(),
+        date: String(exam.examDateTime || "").slice(0, 10),
+        type: "exam",
+      }))
+      .filter((item) => isValidDateString(item.date)),
+  ]
+    .filter((item) => isValidDateString(item.date) && item.date >= todayToken)
+    .sort((left, right) => String(left.date).localeCompare(String(right.date)))
+    .slice(0, 3);
+
+  renderDashboardSimpleList(
+    elements.dashboardMilestoneList,
+    calendarEvents,
+    "캘린더 일정 데이터가 없습니다.",
+    { showTypeBadge: true },
+  );
+
+  const innovationRows = companyOptions.map((company) => {
+    const companyProjects = projects.filter((project) => project.company === company);
+    const avgProgress = companyProjects.length
+      ? Math.round(companyProjects.reduce((sum, project) => sum + parseNumber(project.progress, 0), 0) / companyProjects.length)
+      : 0;
+    return { label: company, value: companyProjects.length, sub: avgProgress };
+  })
+    .sort((left, right) => {
+      if (right.value !== left.value) {
+        return right.value - left.value;
+      }
+      if (right.sub !== left.sub) {
+        return right.sub - left.sub;
+      }
+      return left.label.localeCompare(right.label);
+    });
+
+  if (elements.dashboardInnovationCompanyChart) {
+    const maxTaskCount = innovationRows.reduce((max, row) => Math.max(max, row.value), 0);
+    const countChart = innovationRows.map((row) => {
+      const width = maxTaskCount > 0 ? Math.round((row.value / maxTaskCount) * 100) : 0;
+      return `
+        <div class="dashboard-chart-row" style="display:grid;grid-template-columns:120px 1fr auto;gap:14px;align-items:center;margin:13px 0;">
+          <strong style="font-size:0.9rem;line-height:1.2;">${escapeHtml(row.label)}</strong>
+          <div class="dashboard-bar-track" style="height:12px;background:#eef4ff;border-radius:999px;overflow:hidden;" title="${escapeHtml(`${row.label}: ${row.value}건`)}">
+            <span class="dashboard-bar-fill-x dashboard-bar-fill-blue" style="display:block;height:100%;width:${width}%;background:#2056c8;border-radius:999px;"></span>
+          </div>
+          <span style="font-size:0.84rem;line-height:1;">${escapeHtml(`${row.value}건`)}</span>
+        </div>
+      `;
+    }).join("");
+
+    const progressChart = innovationRows.map((row) => `
+      <div class="dashboard-chart-row" style="display:grid;grid-template-columns:120px 1fr auto;gap:14px;align-items:center;margin:13px 0;">
+        <strong style="font-size:0.9rem;line-height:1.2;">${escapeHtml(row.label)}</strong>
+        <div class="dashboard-bar-track" style="height:12px;background:#eef4ff;border-radius:999px;overflow:hidden;" title="${escapeHtml(`${row.label}: ${row.sub}%`)}">
+          <span class="dashboard-bar-fill-x dashboard-bar-fill-green" style="display:block;height:100%;width:${Math.max(0, Math.min(100, row.sub))}%;background:#22a06b;border-radius:999px;"></span>
+        </div>
+        <span style="font-size:0.84rem;line-height:1;">${escapeHtml(`${row.sub}%`)}</span>
+      </div>
+    `).join("");
+
+    elements.dashboardInnovationCompanyChart.innerHTML = `
+      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;padding:4px 2px 6px;">
+        <section>
+          <p style="margin:0 0 12px;color:#49648d;font-size:0.88rem;font-weight:700;">법인별 혁신과제 건수</p>
+          ${countChart}
+        </section>
+        <section>
+          <p style="margin:0 0 12px;color:#49648d;font-size:0.88rem;font-weight:700;">법인별 혁신과제 진행률</p>
+          ${progressChart}
+        </section>
+      </div>
+    `;
+  }
+
+  const stackedRows = companyOptions.map((company) => {
+    const items = qualifications.filter((qualification) => qualification.company === company);
+    return { company, total: items.length };
+  })
+    .sort((left, right) => {
+      if (right.total !== left.total) {
+        return right.total - left.total;
+      }
+      return left.company.localeCompare(right.company);
+    });
+
+  if (elements.dashboardQualificationStackedChart) {
+    const maxQualificationCount = stackedRows.reduce((max, row) => Math.max(max, row.total), 0);
+    const bars = stackedRows.map((row) => {
+      const height = maxQualificationCount > 0 ? Math.round((row.total / maxQualificationCount) * 100) : 0;
+      return `
+        <div class="dashboard-chart-col" style="display:flex;flex-direction:column;align-items:center;gap:11px;min-width:78px;">
+          <div class="dashboard-col-track" style="height:124px;width:36px;background:#eef4ff;border-radius:10px;display:flex;align-items:flex-end;overflow:hidden;" title="${escapeHtml(`${row.company}: ${row.total}건`)}">
+            <span class="dashboard-bar-fill-y dashboard-bar-fill-blue" style="display:block;width:100%;height:${height}%;background:#2f6df6;"></span>
+          </div>
+          <strong style="font-size:0.9rem;line-height:1.2;text-align:center;white-space:nowrap;">${escapeHtml(row.company)}</strong>
+          <span style="color:#5b7196;font-size:0.84rem;line-height:1;">${escapeHtml(`${row.total}건`)}</span>
+        </div>
+      `;
+    }).join("");
+
+    elements.dashboardQualificationStackedChart.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:18px;padding:10px 6px 4px;min-height:228px;">
+        ${bars}
+      </div>
+    `;
+  }
+
+  const passTypeRows = qualificationTypeOptions.map((type) => {
+    const relatedExamIds = certificationExams.filter((exam) => exam.examType === type).map((exam) => exam.id);
+    const applicants = certificationExamApplications.filter((item) => relatedExamIds.includes(item.examId));
+    const passed = applicants.filter((item) => item.completed).length;
+    const rate = applicants.length ? Math.round((passed / applicants.length) * 100) : 0;
+    return { label: type, value: rate, sub: `${passed}/${applicants.length}` };
+  });
+  if (elements.dashboardCertificationPassChart) {
+    const bars = passTypeRows.map((row) => `
+      <div class="dashboard-chart-col" style="display:flex;flex-direction:column;align-items:center;gap:10px;min-width:62px;">
+        <div class="dashboard-col-track" style="height:96px;width:26px;background:#eef4ff;border-radius:9px;display:flex;align-items:flex-end;overflow:hidden;" title="${escapeHtml(`${row.label}: ${row.value}% (${row.sub})`)}">
+          <span class="dashboard-bar-fill-y dashboard-bar-fill-green" style="display:block;width:100%;height:${Math.max(0, Math.min(100, row.value))}%;background:#22a06b;"></span>
+        </div>
+        <strong style="font-size:0.9rem;line-height:1.2;">${escapeHtml(row.label)}</strong>
+        <span style="color:#5b7196;font-size:0.84rem;line-height:1;">${escapeHtml(`${row.value}% (${row.sub})`)}</span>
+      </div>
+    `).join("");
+
+    elements.dashboardCertificationPassChart.innerHTML = `
+      <div style="display:flex;justify-content:space-around;align-items:flex-end;gap:16px;padding:10px 6px 4px;min-height:228px;">
+        ${bars}
+      </div>
+    `;
+  }
+}
+
+function renderAdminDashboardDataBoards() {
+  if (elements.adminNoticeTableBody) {
+    if (!dashboardNoticeItems.length) {
+      elements.adminNoticeTableBody.innerHTML = '<tr><td colspan="2" class="empty-cell">등록된 공지사항이 없습니다.</td></tr>';
+    } else {
+      if (!dashboardNoticeItems.some((item) => item.id === state.selectedAdminNoticeId)) {
+        state.selectedAdminNoticeId = dashboardNoticeItems[0]?.id ?? null;
+      }
+      elements.adminNoticeTableBody.innerHTML = dashboardNoticeItems
+        .slice()
+        .sort((left, right) => String(right.date).localeCompare(String(left.date)))
+        .map((item) => `
+          <tr class="${item.id === state.selectedAdminNoticeId ? "is-selected" : ""}" data-admin-notice-id="${escapeHtml(item.id)}">
+            <td>${escapeHtml(item.title)}</td>
+            <td>${escapeHtml(formatDateWithYear(item.date))}</td>
+          </tr>
+        `)
+        .join("");
+    }
+  }
+
+  if (elements.adminDashboardMilestoneTableBody) {
+    const sortedMilestones = getSortedMilestones();
+    if (!sortedMilestones.length) {
+      elements.adminDashboardMilestoneTableBody.innerHTML = '<tr><td colspan="2" class="empty-cell">등록된 주요 일정이 없습니다.</td></tr>';
+    } else {
+      if (!sortedMilestones.some((item) => item.id === state.selectedAdminDashboardMilestoneId)) {
+        state.selectedAdminDashboardMilestoneId = sortedMilestones[0]?.id ?? null;
+      }
+      elements.adminDashboardMilestoneTableBody.innerHTML = sortedMilestones
+        .map((item) => `
+          <tr class="${item.id === state.selectedAdminDashboardMilestoneId ? "is-selected" : ""}" data-admin-dashboard-milestone-id="${escapeHtml(item.id)}">
+            <td>${escapeHtml(item.title)}</td>
+            <td>${escapeHtml(formatDateWithYear(item.date))}</td>
+          </tr>
+        `)
+        .join("");
+    }
+  }
+}
+
 function getQualificationTypeClass(type) {
   if (type === "6σ") {
     return "type-six-sigma";
@@ -4308,6 +5236,232 @@ function renderQualificationGradeFieldOptions(type, selectedGrade = "") {
     .map((grade) => `<option value="${grade}">${grade}</option>`)
     .join("");
   elements.qualificationGrade.value = safeGrade;
+}
+
+function getCertificationOperationStatusLabel(status) {
+  return certificationOperationStatusLabels[status] || certificationOperationStatusLabels.planned;
+}
+
+function renderCertificationExamGradeFieldOptions(type, selectedGrade = "") {
+  if (!elements.certificationExamGrade) {
+    return;
+  }
+  const gradeOptions = getQualificationGradeList(type);
+  const safeGrade = gradeOptions.includes(selectedGrade) ? selectedGrade : (gradeOptions[0] || "");
+  elements.certificationExamGrade.innerHTML = gradeOptions
+    .map((grade) => `<option value="${grade}">${grade}</option>`)
+    .join("");
+  elements.certificationExamGrade.value = safeGrade;
+}
+
+function formatCertificationApplicationPeriod(startDate, endDate) {
+  if (!isValidDateString(startDate) || !isValidDateString(endDate)) {
+    return "-";
+  }
+  return `${formatDateWithYear(startDate)} ~ ${formatDateWithYear(endDate)}`;
+}
+
+function renderCertificationExamTable() {
+  if (!elements.certificationExamTableBody) {
+    return;
+  }
+
+  if (!certificationExams.length) {
+    elements.certificationExamTableBody.innerHTML = `
+      <tr>
+        <td colspan="5" class="empty-cell">등록된 자격검정 운영 항목이 없습니다. 상단의 등록 버튼으로 시작하세요.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  if (!certificationExams.some((exam) => exam.id === state.selectedCertificationExamId)) {
+    state.selectedCertificationExamId = certificationExams[0]?.id ?? null;
+  }
+
+  elements.certificationExamTableBody.innerHTML = certificationExams
+    .map((exam) => {
+      const isSelected = exam.id === state.selectedCertificationExamId;
+      const isChecked = hasCheckedCertificationExam(exam.id);
+      return `
+        <tr class="qualification-row ${isSelected ? "is-selected" : ""}" data-certification-exam-id="${exam.id}">
+          <td class="selection-cell qualification-selection-cell">
+            <span
+              class="selection-box ${isChecked ? "is-selected" : ""}"
+              data-certification-exam-select="${exam.id}"
+              role="button"
+              tabindex="0"
+              aria-pressed="${isChecked ? "true" : "false"}"
+              aria-label="${escapeHtml(`${exam.examTitle || "-"} 선택`)}"
+            ></span>
+          </td>
+          <td>
+            <div class="qualification-title-block">
+              <strong>${escapeHtml(exam.examTitle || "-")}</strong>
+              <span class="qualification-title-meta">${escapeHtml(`${exam.examType || "-"} ${exam.examGrade || "-"}`)}</span>
+            </div>
+          </td>
+          <td>${escapeHtml(formatCertificationApplicationPeriod(exam.applicationStartDate, exam.applicationEndDate))}</td>
+          <td>${escapeHtml(exam.examDateTime ? exam.examDateTime.replace("T", " ") : "-")}</td>
+          <td>${formatDateWithYear(exam.resultAnnouncementDate)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function renderCertificationExamDetailCard() {
+  if (!elements.certificationExamDetailCard) {
+    return;
+  }
+
+  if (!certificationExams.length) {
+    elements.certificationExamDetailCard.innerHTML = '<div class="empty-state">선택 가능한 자격검정 항목이 없습니다.</div>';
+    return;
+  }
+
+  const selectedExam = getCertificationExamById(state.selectedCertificationExamId) || certificationExams[0];
+  if (!selectedExam) {
+    elements.certificationExamDetailCard.innerHTML = '<div class="empty-state">선택된 자격검정 항목이 없습니다.</div>';
+    return;
+  }
+
+  const applicantsCount = getCertificationExamApplicationCount(selectedExam.id);
+  const capacity = Math.max(0, Math.round(parseNumber(selectedExam.capacity, 0)));
+  const denominator = applicantsCount > 0 ? applicantsCount : 0;
+  const passedCount = getCertificationExamPassedCount(selectedExam.id);
+  const passRate = denominator > 0 ? Math.round((passedCount / denominator) * 100) : 0;
+
+  elements.certificationExamDetailCard.innerHTML = `
+    <div class="detail-card-top">
+      <div>
+        <h4>${escapeHtml(selectedExam.examTitle || "-")}</h4>
+        <p class="detail-subtitle">${escapeHtml(`${selectedExam.examType || "-"} · ${selectedExam.examGrade || "-"}`)}</p>
+      </div>
+      <div class="detail-card-actions">
+        <span class="education-status-pill is-${selectedExam.operationStatus || "planned"}">${escapeHtml(getCertificationOperationStatusLabel(selectedExam.operationStatus))}</span>
+      </div>
+    </div>
+    <div class="detail-grid">
+      <div class="detail-metric">
+        <span>신청인원/정원</span>
+        <strong>${escapeHtml(`${applicantsCount}/${capacity}`)}</strong>
+      </div>
+      <div class="detail-metric">
+        <span>시험합격률</span>
+        <strong>${escapeHtml(`${passedCount}/${denominator}명 (${passRate}%)`)}</strong>
+      </div>
+    </div>
+    <ul class="detail-list">
+      <li><span class="detail-label">응시대상</span><strong>${escapeHtml(selectedExam.targetAudience || "-")}</strong></li>
+      <li><span class="detail-label">자격요건</span><strong>${escapeHtml(selectedExam.qualificationRequirement || "-")}</strong></li>
+      <li><span class="detail-label">합격기준</span><strong>${escapeHtml(selectedExam.passCriteria || "-")}</strong></li>
+      <li><span class="detail-label">접수기간</span><strong>${escapeHtml(formatCertificationApplicationPeriod(selectedExam.applicationStartDate, selectedExam.applicationEndDate))}</strong></li>
+      <li><span class="detail-label">시험일시</span><strong>${escapeHtml(selectedExam.examDateTime ? selectedExam.examDateTime.replace("T", " ") : "-")}</strong></li>
+      <li><span class="detail-label">결과발표일</span><strong>${escapeHtml(formatDateWithYear(selectedExam.resultAnnouncementDate))}</strong></li>
+      <li><span class="detail-label">시험장소</span><strong>${escapeHtml(selectedExam.examLocation || "-")}</strong></li>
+      <li><span class="detail-label">비고</span><strong>${escapeHtml(selectedExam.note || "-")}</strong></li>
+    </ul>
+  `;
+}
+
+function renderCertificationApplicantTable() {
+  if (!elements.certificationApplicantTableBody) {
+    return;
+  }
+
+  const scope = state.certificationApplicantScope === "all" ? "all" : "selected";
+  if (elements.certificationApplicantScopeFilter) {
+    elements.certificationApplicantScopeFilter.value = scope;
+  }
+
+  const selectedExam = getCertificationExamById(state.selectedCertificationExamId);
+  const sourceRows = scope === "all"
+    ? [...certificationExamApplications]
+    : certificationExamApplications.filter((item) => item.examId === state.selectedCertificationExamId);
+
+  const rows = sourceRows
+    .map((item) => ({
+      ...item,
+      exam: getCertificationExamById(item.examId),
+    }))
+    .filter((item) => item.exam)
+    .sort((left, right) => String(right.appliedAt || "").localeCompare(String(left.appliedAt || "")));
+  pruneSelectedCertificationApplicantIds();
+
+  if (elements.certificationApplicantSelectedMeta) {
+    if (scope === "all") {
+      elements.certificationApplicantSelectedMeta.textContent = `전체 시험 기준 응시자 ${rows.length}건`;
+    } else if (selectedExam) {
+      const examTitle = selectedExam.examTitle || `${selectedExam.examType || "시험"} ${selectedExam.examGrade || ""}`.trim();
+      elements.certificationApplicantSelectedMeta.textContent = `${examTitle} 응시자 ${rows.length}건`;
+    } else {
+      elements.certificationApplicantSelectedMeta.textContent = "선택한 시험이 없습니다.";
+    }
+  }
+
+  if (!rows.length) {
+    elements.certificationApplicantTableBody.innerHTML = `
+      <tr>
+        <td colspan="9" class="empty-cell">${scope === "all" ? "등록된 시험응시자 정보가 없습니다." : "선택한 시험의 응시자 정보가 없습니다."}</td>
+      </tr>
+    `;
+    return;
+  }
+
+  elements.certificationApplicantTableBody.innerHTML = rows.map((row) => {
+    const examTitle = row.exam?.examTitle || `${row.exam?.examType || "시험"} ${row.exam?.examGrade || ""}`.trim();
+    const examSubtitle = `${row.exam?.examType || "-"} · ${row.exam?.examGrade || "-"}`;
+    const isChecked = hasCheckedCertificationApplicant(row.id);
+    return `
+      <tr>
+        <td class="selection-cell qualification-selection-cell">
+          <span
+            class="selection-box ${isChecked ? "is-selected" : ""}"
+            data-certification-application-select="${escapeHtml(row.id)}"
+            role="button"
+            tabindex="0"
+            aria-pressed="${isChecked ? "true" : "false"}"
+            aria-label="${escapeHtml(`${row.name || "-"} 선택`)}"
+          ></span>
+        </td>
+        <td>
+          <div class="qualification-title-block">
+            <strong>${escapeHtml(examTitle)}</strong>
+            <span class="qualification-title-meta">${escapeHtml(examSubtitle)}</span>
+          </div>
+        </td>
+        <td>
+          <div class="qualification-title-block">
+            <strong>${escapeHtml(`${row.name || "-"} / ${row.position || "-"}`)}</strong>
+            <span class="qualification-title-meta">${escapeHtml(`${row.company || "-"} / ${row.department || "-"}`)}</span>
+          </div>
+        </td>
+        <td>${escapeHtml(row.email || "-")}</td>
+        <td>${escapeHtml(row.phone || "-")}</td>
+        <td>
+          <input
+            class="user-edit-input"
+            type="text"
+            value="${escapeHtml(row.certificateNo || "")}"
+            placeholder="자격증번호"
+            data-certification-application-id="${escapeHtml(row.id)}"
+            data-certification-application-field="certificateNo"
+          >
+        </td>
+        <td>
+          <input
+            class="user-edit-input"
+            type="date"
+            value="${escapeHtml(row.acquiredDate || "")}"
+            data-certification-application-id="${escapeHtml(row.id)}"
+            data-certification-application-field="acquiredDate"
+          >
+        </td>
+        <td>${escapeHtml(formatDateWithYear(row.appliedAt))}</td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function getFilteredQualifications() {
@@ -4624,6 +5778,10 @@ function renderEducationCalendarPage() {
   const monthSchedules = getEducationSchedulesInCurrentMonth(filteredSchedules);
   const monthRange = getEducationMonthRange();
   const monthCursor = monthRange.cursor;
+  const monthCertificationExams = certificationExams.filter((exam) => {
+    const examDateToken = String(exam.examDateTime || "").slice(0, 10);
+    return isValidDateString(examDateToken) && examDateToken.startsWith(getEducationMonthKey(monthCursor));
+  });
 
   if (elements.educationMonthLabel) {
     elements.educationMonthLabel.textContent = `${monthCursor.getFullYear()}년 ${monthCursor.getMonth() + 1}월`;
@@ -4640,9 +5798,21 @@ function renderEducationCalendarPage() {
     selectedSchedule = daySchedules[0] || monthSchedules[0] || null;
     state.selectedEducationScheduleId = selectedSchedule?.id || null;
   }
+  let selectedExam = getCertificationExamById(state.selectedCertificationExamId);
+  if (!selectedExam || !monthCertificationExams.some((exam) => exam.id === selectedExam.id)) {
+    const dayExams = getCertificationExamsOnDate(state.selectedEducationDate, monthCertificationExams);
+    selectedExam = dayExams[0] || monthCertificationExams[0] || null;
+    state.selectedCertificationExamId = selectedExam?.id || null;
+  }
 
   if (selectedSchedule && !(state.selectedEducationDate >= selectedSchedule.startDate && state.selectedEducationDate <= selectedSchedule.endDate)) {
     state.selectedEducationDate = selectedSchedule.startDate;
+  }
+  if (selectedExam) {
+    const selectedExamDate = String(selectedExam.examDateTime || "").slice(0, 10);
+    if (isValidDateString(selectedExamDate) && state.selectedCalendarEventType === "certification" && state.selectedEducationDate !== selectedExamDate) {
+      state.selectedEducationDate = selectedExamDate;
+    }
   }
 
   const firstDay = new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1);
@@ -4657,27 +5827,47 @@ function renderEducationCalendarPage() {
     const isToday = dateToken === toIsoDate(REFERENCE_DATE);
     const isSelected = dateToken === state.selectedEducationDate;
     const daySchedules = getEducationSchedulesOnDate(dateToken, monthSchedules);
+    const dayExams = getCertificationExamsOnDate(dateToken, monthCertificationExams);
+    const dayEvents = [
+      ...daySchedules.map((schedule) => ({ kind: "education", schedule })),
+      ...dayExams.map((exam) => ({ kind: "certification", exam })),
+    ];
     const isExpanded = state.educationExpandedDate === dateToken;
-    const visibleCount = isExpanded ? daySchedules.length : 2;
-    const hiddenCount = Math.max(0, daySchedules.length - visibleCount);
+    const visibleCount = isExpanded ? dayEvents.length : 2;
+    const hiddenCount = Math.max(0, dayEvents.length - visibleCount);
 
-    const chips = daySchedules
+    const chips = dayEvents
       .slice(0, visibleCount)
-      .map((schedule) => {
-        const course = getEducationCourseById(schedule.courseId);
-        const title = getEducationAdminDisplayCourseName(schedule, course);
-        const activeClass = schedule.id === state.selectedEducationScheduleId ? "is-active" : "";
-        const chipStatus = getEducationCalendarChipStatus(schedule);
+      .map((eventItem) => {
+        if (eventItem.kind === "education") {
+          const { schedule } = eventItem;
+          const course = getEducationCourseById(schedule.courseId);
+          const title = getEducationAdminDisplayCourseName(schedule, course);
+          const activeClass = schedule.id === state.selectedEducationScheduleId ? "is-active" : "";
+          const chipStatus = getEducationCalendarChipStatus(schedule);
+          return `
+            <button type="button" class="education-event-chip ${activeClass}" data-education-schedule-id="${schedule.id}" title="${escapeHtml(title)}">
+              <span class="education-event-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+              <span class="education-event-status ${chipStatus.className}">${escapeHtml(`${chipStatus.icon} ${chipStatus.label}`)}</span>
+            </button>
+          `;
+        }
+        const { exam } = eventItem;
+        const examTitle = exam.examTitle || `${exam.examType || "시험"} ${exam.examGrade || ""}`.trim();
+        const chipStatus = getCertificationExamCalendarChipStatus(exam);
+        const activeClass = state.selectedCalendarEventType === "certification" && exam.id === state.selectedCertificationExamId
+          ? "is-active"
+          : "";
         return `
-          <button type="button" class="education-event-chip ${activeClass}" data-education-schedule-id="${schedule.id}" title="${escapeHtml(title)}">
-            <span class="education-event-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
+          <button type="button" class="education-event-chip ${activeClass}" data-certification-exam-id="${exam.id}" title="${escapeHtml(examTitle)}">
+            <span class="education-event-title" title="${escapeHtml(examTitle)}">${escapeHtml(examTitle)}</span>
             <span class="education-event-status ${chipStatus.className}">${escapeHtml(`${chipStatus.icon} ${chipStatus.label}`)}</span>
           </button>
         `;
       })
       .join("");
 
-    const moreChip = daySchedules.length > 2
+    const moreChip = dayEvents.length > 2
       ? `<button type="button" class="education-event-more" data-education-more-date="${dateToken}">${isExpanded ? "접기" : `+${hiddenCount}`}</button>`
       : "";
 
@@ -4685,7 +5875,7 @@ function renderEducationCalendarPage() {
       <div class="education-day-cell ${isCurrentMonth ? "" : "is-outside"} ${isToday ? "is-today" : ""} ${isSelected ? "is-selected" : ""}">
         <button type="button" class="education-day-head" data-education-date="${dateToken}">
           <span class="education-day-number">${date.getDate()}</span>
-          <span class="education-day-count">${daySchedules.length ? `${daySchedules.length}건` : ""}</span>
+          <span class="education-day-count">${dayEvents.length ? `${dayEvents.length}건` : ""}</span>
         </button>
         <div class="education-day-events">
           ${chips}
@@ -4737,9 +5927,102 @@ function renderEducationCalendarPage() {
     }
   }
 
-  if (!selectedSchedule) {
+  if (!selectedSchedule && !selectedExam) {
     state.educationApplyFormScheduleId = null;
+    state.certificationApplyFormExamId = null;
     elements.educationScheduleDetail.innerHTML = '<div class="empty-state">선택한 일정이 없습니다. 캘린더에서 과정을 선택해 주세요.</div>';
+    return;
+  }
+
+  if ((state.selectedCalendarEventType === "certification" || !selectedSchedule) && selectedExam) {
+    state.selectedCalendarEventType = "certification";
+    state.educationApplyFormScheduleId = null;
+    const identity = getEducationCurrentIdentity();
+    const applicantsCount = getCertificationExamApplicationCount(selectedExam.id);
+    const capacity = Math.max(0, parseNumber(selectedExam.capacity, 0));
+    const chipStatus = getCertificationExamCalendarChipStatus(selectedExam);
+    const alreadyApplied = certificationExamApplications.some((item) =>
+      item.examId === selectedExam.id && item.employeeId === identity.employeeId
+    );
+    const canApply = hasEducationApplyAccess();
+    const canRecruitApply = chipStatus.label === "접수중";
+    const applyDisabled = alreadyApplied || !canApply || !canRecruitApply;
+    const applyLabel = alreadyApplied
+      ? "접수완료"
+      : !canApply
+        ? "접수권한 없음"
+        : !canRecruitApply
+          ? chipStatus.label
+          : "시험 접수하기";
+    const positionOptions = ["임원", "수석", "책임", "선임", "사원"];
+    const defaultPosition = positionOptions.includes(identity.position) ? identity.position : "";
+    const isApplyFormVisible = state.certificationApplyFormExamId === selectedExam.id && !applyDisabled;
+    const applyFormMarkup = isApplyFormVisible
+      ? `
+        <form class="education-apply-form" data-certification-apply-form="${selectedExam.id}">
+          <div class="education-apply-form-grid">
+            <label class="form-field">
+              <span>법인명</span>
+              <input name="company" type="text" value="${escapeHtml(identity.company || "")}" readonly>
+            </label>
+            <label class="form-field">
+              <span>부서명</span>
+              <input name="department" type="text" value="${escapeHtml(identity.department || "")}" readonly>
+            </label>
+            <label class="form-field">
+              <span>이름</span>
+              <input name="name" type="text" value="${escapeHtml(identity.name || "")}" readonly>
+            </label>
+            <label class="form-field">
+              <span>직책</span>
+              <select name="position" required>
+                <option value="">선택하세요</option>
+                ${positionOptions
+    .map((position) => `<option value="${escapeHtml(position)}" ${position === defaultPosition ? "selected" : ""}>${escapeHtml(position)}</option>`)
+    .join("")}
+              </select>
+            </label>
+            <label class="form-field">
+              <span>이메일</span>
+              <input name="email" type="email" value="${escapeHtml(identity.email || "")}" readonly>
+            </label>
+            <label class="form-field">
+              <span>휴대전화번호</span>
+              <input name="phone" type="tel" placeholder="예: 010-1234-5678" value="${escapeHtml(identity.phone || "")}" required>
+            </label>
+          </div>
+          <div class="education-apply-form-actions">
+            <button type="button" class="secondary-button" data-certification-apply-cancel>취소</button>
+            <button type="submit" class="primary-button">접수 제출</button>
+          </div>
+        </form>
+      `
+      : "";
+
+    elements.educationScheduleDetail.innerHTML = `
+      <div class="education-detail-head">
+        <h4>${escapeHtml(selectedExam.examTitle || "-")}</h4>
+      </div>
+      <p class="education-detail-copy">${escapeHtml(selectedExam.note || "시험과정 설명이 등록되지 않았습니다.")}</p>
+      <ul class="education-detail-list">
+        <li><span>시험구분/등급</span><strong>${escapeHtml(`${selectedExam.examType || "-"} / ${selectedExam.examGrade || "-"}`)}</strong></li>
+        <li><span>응시대상</span><strong>${escapeHtml(selectedExam.targetAudience || "-")}</strong></li>
+        <li><span>자격요건</span><strong>${escapeHtml(selectedExam.qualificationRequirement || "-")}</strong></li>
+        <li><span>신청인원/정원</span><strong>${escapeHtml(`${applicantsCount}/${capacity}`)}</strong></li>
+        <li><span>접수기간</span><strong>${escapeHtml(formatCertificationApplicationPeriod(selectedExam.applicationStartDate, selectedExam.applicationEndDate))}</strong></li>
+        <li><span>시험일시</span><strong>${escapeHtml(selectedExam.examDateTime ? selectedExam.examDateTime.replace("T", " ") : "-")}</strong></li>
+        <li><span>결과발표일</span><strong>${escapeHtml(formatDateWithYear(selectedExam.resultAnnouncementDate))}</strong></li>
+        <li><span>상태</span><strong><span class="education-recruit-badge ${chipStatus.className}">${escapeHtml(chipStatus.label)}</span></strong></li>
+        <li><span>시험장소</span><strong>${escapeHtml(selectedExam.examLocation || "-")}</strong></li>
+      </ul>
+      <button
+        type="button"
+        class="primary-button education-apply-button ${chipStatus.label === "시험종료" ? "is-closed" : ""} ${alreadyApplied ? "is-complete" : ""}"
+        data-certification-apply-toggle="${selectedExam.id}"
+        ${applyDisabled ? "disabled" : ""}
+      >${applyLabel}</button>
+      ${applyFormMarkup}
+    `;
     return;
   }
 
@@ -6622,6 +7905,28 @@ function syncQualificationActionButtons(filteredQualifications) {
   }
 }
 
+function syncCertificationExamActionButtons() {
+  const canManage = hasQualificationManagementAccess();
+  const hasSelected = Boolean(
+    certificationExams.length
+      && certificationExams.some((exam) => exam.id === state.selectedCertificationExamId),
+  );
+  const hasChecked = getSelectedCertificationExamIds().length > 0;
+
+  if (elements.addCertificationExamButton) {
+    elements.addCertificationExamButton.hidden = !canManage;
+    elements.addCertificationExamButton.disabled = !canManage;
+  }
+  if (elements.editCertificationExamButton) {
+    elements.editCertificationExamButton.hidden = !canManage;
+    elements.editCertificationExamButton.disabled = !canManage || !hasSelected;
+  }
+  if (elements.deleteCertificationExamButton) {
+    elements.deleteCertificationExamButton.hidden = !canManage;
+    elements.deleteCertificationExamButton.disabled = !canManage || (!hasSelected && !hasChecked);
+  }
+}
+
 function renderHero(filteredProjects) {
   const insight = buildWeeklyInsight(filteredProjects);
 
@@ -7067,6 +8372,148 @@ function closeQualificationModal() {
   syncBodyModalState();
 }
 
+function resetCertificationExamForm() {
+  if (!elements.certificationExamForm) {
+    return;
+  }
+  elements.certificationExamForm.reset();
+  const nextType = qualificationTypeOptions[0];
+  elements.certificationExamType.value = nextType;
+  renderCertificationExamGradeFieldOptions(nextType);
+  elements.certificationExamApplicationStartDate.value = toIsoDate(REFERENCE_DATE);
+  elements.certificationExamApplicationEndDate.value = toIsoDate(REFERENCE_DATE);
+  elements.certificationExamDateTime.value = `${toIsoDate(REFERENCE_DATE)}T09:00`;
+  elements.certificationExamResultDate.value = toIsoDate(REFERENCE_DATE);
+  elements.certificationExamCapacity.value = "30";
+  elements.certificationExamStatus.value = "planned";
+}
+
+function populateCertificationExamForm(exam) {
+  elements.certificationExamType.value = exam.examType || qualificationTypeOptions[0];
+  renderCertificationExamGradeFieldOptions(elements.certificationExamType.value, exam.examGrade || "");
+  elements.certificationExamTitle.value = exam.examTitle || "";
+  elements.certificationExamTarget.value = exam.targetAudience || "";
+  elements.certificationExamRequirement.value = exam.qualificationRequirement || "";
+  elements.certificationExamPassCriteria.value = exam.passCriteria || "";
+  elements.certificationExamApplicationStartDate.value = exam.applicationStartDate;
+  elements.certificationExamApplicationEndDate.value = exam.applicationEndDate;
+  elements.certificationExamDateTime.value = exam.examDateTime;
+  elements.certificationExamResultDate.value = exam.resultAnnouncementDate || "";
+  elements.certificationExamCapacity.value = String(exam.capacity || 30);
+  elements.certificationExamLocation.value = exam.examLocation;
+  elements.certificationExamStatus.value = normalizeCertificationOperationStatus(exam.operationStatus);
+  elements.certificationExamNote.value = exam.note || "";
+}
+
+function openCertificationExamModal(mode, examId = null) {
+  if (!elements.certificationExamModal || !elements.certificationExamForm) {
+    return;
+  }
+
+  state.certificationExamModalMode = mode;
+  state.editingCertificationExamId = examId;
+
+  if (mode === "edit" && examId) {
+    const exam = getCertificationExamById(examId);
+    if (!exam) {
+      return;
+    }
+    elements.certificationExamModalTitle.textContent = "자격검정 정보 수정";
+    elements.certificationExamFormSubmit.textContent = "수정 저장";
+    populateCertificationExamForm(exam);
+  } else {
+    elements.certificationExamModalTitle.textContent = "자격검정 정보 등록";
+    elements.certificationExamFormSubmit.textContent = "등록하기";
+    resetCertificationExamForm();
+  }
+
+  elements.certificationExamModal.hidden = false;
+  syncBodyModalState();
+  window.setTimeout(() => elements.certificationExamTitle?.focus(), 0);
+}
+
+function closeCertificationExamModal() {
+  if (!elements.certificationExamModal) {
+    return;
+  }
+  elements.certificationExamModal.hidden = true;
+  state.editingCertificationExamId = null;
+  syncBodyModalState();
+}
+
+function readCertificationExamFormValues() {
+  const formData = new FormData(elements.certificationExamForm);
+  return {
+    id: state.certificationExamModalMode === "edit" ? state.editingCertificationExamId : undefined,
+    examType: formData.get("examType"),
+    examGrade: formData.get("examGrade"),
+    examTitle: formData.get("examTitle"),
+    targetAudience: formData.get("targetAudience"),
+    qualificationRequirement: formData.get("qualificationRequirement"),
+    passCriteria: formData.get("passCriteria"),
+    applicationStartDate: formData.get("applicationStartDate"),
+    applicationEndDate: formData.get("applicationEndDate"),
+    examDateTime: formData.get("examDateTime"),
+    resultAnnouncementDate: formData.get("resultAnnouncementDate"),
+    capacity: formData.get("capacity"),
+    examLocation: formData.get("examLocation"),
+    operationStatus: formData.get("operationStatus"),
+    note: formData.get("note"),
+  };
+}
+
+function upsertCertificationExam(examData) {
+  const previous = state.certificationExamModalMode === "edit" && state.editingCertificationExamId
+    ? getCertificationExamById(state.editingCertificationExamId)
+    : null;
+  const normalized = normalizeCertificationExam({
+    ...previous,
+    ...examData,
+  });
+
+  if (state.certificationExamModalMode === "edit" && state.editingCertificationExamId) {
+    const index = certificationExams.findIndex((exam) => exam.id === state.editingCertificationExamId);
+    if (index >= 0) {
+      certificationExams.splice(index, 1, normalized);
+    }
+  } else {
+    certificationExams.unshift(normalized);
+  }
+
+  saveCertificationExams();
+  state.selectedCertificationExamId = normalized.id;
+  closeCertificationExamModal();
+  render();
+}
+
+function deleteCertificationExams(examIds = []) {
+  const targetIds = Array.from(new Set(
+    examIds.filter((examId) => getCertificationExamById(examId)),
+  ));
+  if (!targetIds.length) {
+    return;
+  }
+
+  const shouldDelete = targetIds.length === 1
+    ? window.confirm(`"${getCertificationExamById(targetIds[0])?.examTitle || "-"}" 자격검정 정보를 삭제할까요?`)
+    : window.confirm(`선택한 자격검정 정보 ${targetIds.length}건을 삭제할까요?`);
+  if (!shouldDelete) {
+    return;
+  }
+
+  certificationExams = certificationExams.filter((exam) => !targetIds.includes(exam.id));
+  state.selectedCertificationExamIds = getSelectedCertificationExamIds().filter((id) => !targetIds.includes(id));
+  saveCertificationExams();
+
+  if (targetIds.includes(state.selectedCertificationExamId)) {
+    state.selectedCertificationExamId = certificationExams[0]?.id ?? null;
+  }
+  if ((state.editingCertificationExamId && targetIds.includes(state.editingCertificationExamId)) || !certificationExams.length) {
+    closeCertificationExamModal();
+  }
+  render();
+}
+
 function resetQualificationForm() {
   if (!elements.qualificationForm) {
     return;
@@ -7415,6 +8862,43 @@ function attachQualificationTableEvents() {
   });
 }
 
+function attachCertificationExamTableEvents() {
+  elements.certificationExamTableBody?.querySelectorAll("[data-certification-exam-id]").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      const interactiveTarget = event.target.closest("[data-certification-exam-select]");
+      if (interactiveTarget) {
+        return;
+      }
+      state.selectedCertificationExamId = row.getAttribute("data-certification-exam-id");
+      render();
+    });
+  });
+
+  elements.certificationExamTableBody?.querySelectorAll("[data-certification-exam-select]").forEach((selectionNode) => {
+    const toggleSelection = () => {
+      const examId = selectionNode.getAttribute("data-certification-exam-select");
+      if (!examId) {
+        return;
+      }
+      state.selectedCertificationExamId = examId;
+      toggleCheckedCertificationExam(examId);
+      render();
+    };
+
+    selectionNode.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleSelection();
+    });
+    selectionNode.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleSelection();
+      }
+    });
+  });
+}
+
 function attachTaskPaginationEvents() {
   elements.taskPagination?.querySelectorAll("[data-task-page]").forEach((pageNode) => {
     const moveToPage = () => {
@@ -7571,7 +9055,7 @@ function bindEvents() {
       }
 
       if (groupKey === "education") {
-        const educationPages = ["education-calendar", "my-learning", "education-admin", "survey-management"];
+        const educationPages = ["education-calendar", "my-learning", "education-admin", "certification-management", "survey-management"];
         const isEducationActive = educationPages.includes(state.activePage);
 
         if (!isEducationActive) {
@@ -7645,6 +9129,82 @@ function bindEvents() {
     render();
   });
 
+  elements.certificationApplicantScopeFilter?.addEventListener("change", (event) => {
+    state.certificationApplicantScope = event.target.value === "all" ? "all" : "selected";
+    render();
+  });
+
+  elements.certificationApplicantTableBody?.addEventListener("change", (event) => {
+    const fieldNode = event.target.closest("[data-certification-application-field]");
+    if (!fieldNode) {
+      return;
+    }
+    const applicationId = fieldNode.getAttribute("data-certification-application-id");
+    const field = fieldNode.getAttribute("data-certification-application-field");
+    if (!applicationId || !field) {
+      return;
+    }
+    updateCertificationExamApplicationField(applicationId, field, fieldNode.value);
+  });
+
+  elements.certificationApplicantTableBody?.addEventListener("click", (event) => {
+    const selectionNode = event.target.closest("[data-certification-application-select]");
+    if (!selectionNode) {
+      return;
+    }
+    const applicationId = selectionNode.getAttribute("data-certification-application-select");
+    if (!applicationId) {
+      return;
+    }
+    toggleCheckedCertificationApplicant(applicationId);
+    render();
+  });
+
+  elements.certificationApplicantTableBody?.addEventListener("keydown", (event) => {
+    const isToggleKey = event.key === "Enter" || event.key === " ";
+    if (!isToggleKey) {
+      return;
+    }
+    const selectionNode = event.target.closest("[data-certification-application-select]");
+    if (!selectionNode) {
+      return;
+    }
+    event.preventDefault();
+    const applicationId = selectionNode.getAttribute("data-certification-application-select");
+    if (!applicationId) {
+      return;
+    }
+    toggleCheckedCertificationApplicant(applicationId);
+    render();
+  });
+
+  elements.certificationApplicantCompleteButton?.addEventListener("click", () => {
+    const selectedIds = getSelectedCertificationApplicantIds();
+    if (!selectedIds.length) {
+      window.alert("합격 처리할 응시자를 먼저 선택해 주세요.");
+      return;
+    }
+    completeCertificationExamApplications(selectedIds);
+  });
+
+  elements.certificationApplicantCancelCompleteButton?.addEventListener("click", () => {
+    const selectedIds = getSelectedCertificationApplicantIds();
+    if (!selectedIds.length) {
+      window.alert("합격취소할 응시자를 먼저 선택해 주세요.");
+      return;
+    }
+    cancelCertificationExamCompletions(selectedIds);
+  });
+
+  elements.certificationApplicantDeleteButton?.addEventListener("click", () => {
+    const selectedIds = getSelectedCertificationApplicantIds();
+    if (!selectedIds.length) {
+      window.alert("삭제할 응시자를 먼저 선택해 주세요.");
+      return;
+    }
+    deleteCertificationExamApplications(selectedIds);
+  });
+
   elements.educationLevelFilter?.addEventListener("change", (event) => {
     state.educationLevel = event.target.value;
     state.educationJob = "all";
@@ -7694,10 +9254,31 @@ function bindEvents() {
       const scheduleId = scheduleChip.getAttribute("data-education-schedule-id");
       if (scheduleId) {
         const schedule = getEducationScheduleById(scheduleId);
+        state.selectedCalendarEventType = "education";
         state.selectedEducationScheduleId = scheduleId;
+        state.certificationApplyFormExamId = null;
         state.educationApplyFormScheduleId = null;
         if (schedule) {
           state.selectedEducationDate = schedule.startDate;
+        }
+        render();
+      }
+      return;
+    }
+
+    const examChip = event.target.closest("[data-certification-exam-id]");
+    if (examChip) {
+      const examId = examChip.getAttribute("data-certification-exam-id");
+      if (examId) {
+        const exam = getCertificationExamById(examId);
+        state.selectedCalendarEventType = "certification";
+        state.selectedCertificationExamId = examId;
+        state.educationApplyFormScheduleId = null;
+        if (exam) {
+          const examDateToken = String(exam.examDateTime || "").slice(0, 10);
+          if (isValidDateString(examDateToken)) {
+            state.selectedEducationDate = examDateToken;
+          }
         }
         render();
       }
@@ -7709,8 +9290,10 @@ function bindEvents() {
       const dateToken = dateButton.getAttribute("data-education-date");
       if (dateToken) {
         state.selectedEducationDate = dateToken;
+        state.selectedCalendarEventType = "education";
         const selectedDaySchedules = getEducationSchedulesOnDate(dateToken, getEducationSchedulesInCurrentMonth());
         state.selectedEducationScheduleId = selectedDaySchedules[0]?.id ?? null;
+        state.certificationApplyFormExamId = null;
         state.educationApplyFormScheduleId = null;
         render();
       }
@@ -7725,19 +9308,38 @@ function bindEvents() {
       return;
     }
 
+    const certificationCancelButton = event.target.closest("[data-certification-apply-cancel]");
+    if (certificationCancelButton) {
+      state.certificationApplyFormExamId = null;
+      render();
+      return;
+    }
+
     const applyButton = event.target.closest("[data-education-apply-toggle]");
-    if (!applyButton) {
+    if (applyButton) {
+      const scheduleId = applyButton.getAttribute("data-education-apply-toggle");
+      if (!scheduleId) {
+        return;
+      }
+
+      state.educationApplyFormScheduleId = state.educationApplyFormScheduleId === scheduleId
+        ? null
+        : scheduleId;
+      render();
       return;
     }
 
-    const scheduleId = applyButton.getAttribute("data-education-apply-toggle");
-    if (!scheduleId) {
+    const certificationApplyButton = event.target.closest("[data-certification-apply-toggle]");
+    if (!certificationApplyButton) {
       return;
     }
-
-    state.educationApplyFormScheduleId = state.educationApplyFormScheduleId === scheduleId
+    const examId = certificationApplyButton.getAttribute("data-certification-apply-toggle");
+    if (!examId) {
+      return;
+    }
+    state.certificationApplyFormExamId = state.certificationApplyFormExamId === examId
       ? null
-      : scheduleId;
+      : examId;
     render();
   });
 
@@ -7746,25 +9348,38 @@ function bindEvents() {
     if (!(form instanceof HTMLFormElement)) {
       return;
     }
-    if (!form.matches("[data-education-apply-form]")) {
-      return;
-    }
-
     event.preventDefault();
-    const scheduleId = form.getAttribute("data-education-apply-form");
-    if (!scheduleId) {
+    if (form.matches("[data-education-apply-form]")) {
+      const scheduleId = form.getAttribute("data-education-apply-form");
+      if (!scheduleId) {
+        return;
+      }
+      const formData = new FormData(form);
+      applyEducationSchedule(scheduleId, {
+        position: String(formData.get("position") || "").trim(),
+        email: String(formData.get("email") || "").trim(),
+        phone: String(formData.get("phone") || "").trim(),
+        notebookRequired: String(formData.get("notebookRequired") || "").trim(),
+        residentRegistrationNo: String(formData.get("residentRegistrationNo") || "").trim(),
+      });
+      state.educationApplyFormScheduleId = null;
       return;
     }
 
+    if (!form.matches("[data-certification-apply-form]")) {
+      return;
+    }
+    const examId = form.getAttribute("data-certification-apply-form");
+    if (!examId) {
+      return;
+    }
     const formData = new FormData(form);
-    applyEducationSchedule(scheduleId, {
+    applyCertificationExam(examId, {
       position: String(formData.get("position") || "").trim(),
       email: String(formData.get("email") || "").trim(),
       phone: String(formData.get("phone") || "").trim(),
-      notebookRequired: String(formData.get("notebookRequired") || "").trim(),
-      residentRegistrationNo: String(formData.get("residentRegistrationNo") || "").trim(),
     });
-    state.educationApplyFormScheduleId = null;
+    state.certificationApplyFormExamId = null;
   });
 
   elements.myLearningTableBody?.addEventListener("click", (event) => {
@@ -8188,6 +9803,112 @@ function bindEvents() {
     }
   });
 
+  elements.adminNoticeTableBody?.addEventListener("click", (event) => {
+    const rowNode = event.target.closest("[data-admin-notice-id]");
+    if (!rowNode) {
+      return;
+    }
+    const noticeId = rowNode.getAttribute("data-admin-notice-id");
+    if (!noticeId) {
+      return;
+    }
+    state.selectedAdminNoticeId = noticeId;
+    render();
+  });
+
+  elements.adminDashboardMilestoneTableBody?.addEventListener("click", (event) => {
+    const rowNode = event.target.closest("[data-admin-dashboard-milestone-id]");
+    if (!rowNode) {
+      return;
+    }
+    const milestoneId = rowNode.getAttribute("data-admin-dashboard-milestone-id");
+    if (!milestoneId) {
+      return;
+    }
+    state.selectedAdminDashboardMilestoneId = milestoneId;
+    render();
+  });
+
+  elements.adminAddNoticeButton?.addEventListener("click", () => {
+    const title = window.prompt("공지 제목을 입력해 주세요.");
+    if (!title || !String(title).trim()) {
+      return;
+    }
+    const dateInput = window.prompt("게시일을 입력해 주세요. (YYYY-MM-DD)", toIsoDate(REFERENCE_DATE));
+    const date = isValidDateString(dateInput) ? dateInput : toIsoDate(REFERENCE_DATE);
+    const nextId = `NOTICE-${String(Date.now()).slice(-6)}`;
+    dashboardNoticeItems.unshift({
+      id: nextId,
+      title: String(title).trim(),
+      date,
+    });
+    state.selectedAdminNoticeId = nextId;
+    saveDashboardNotices();
+    render();
+  });
+
+  elements.adminEditNoticeButton?.addEventListener("click", () => {
+    if (!state.selectedAdminNoticeId) {
+      window.alert("수정할 공지를 선택해 주세요.");
+      return;
+    }
+    const index = dashboardNoticeItems.findIndex((item) => item.id === state.selectedAdminNoticeId);
+    if (index < 0) {
+      return;
+    }
+    const current = dashboardNoticeItems[index];
+    const nextTitle = window.prompt("공지 제목을 수정해 주세요.", current.title);
+    if (!nextTitle || !String(nextTitle).trim()) {
+      return;
+    }
+    const nextDateInput = window.prompt("게시일을 입력해 주세요. (YYYY-MM-DD)", current.date);
+    const nextDate = isValidDateString(nextDateInput) ? nextDateInput : current.date;
+    dashboardNoticeItems.splice(index, 1, {
+      ...current,
+      title: String(nextTitle).trim(),
+      date: nextDate,
+    });
+    saveDashboardNotices();
+    render();
+  });
+
+  elements.adminDeleteNoticeButton?.addEventListener("click", () => {
+    if (!state.selectedAdminNoticeId) {
+      window.alert("삭제할 공지를 선택해 주세요.");
+      return;
+    }
+    const shouldDelete = window.confirm("선택한 공지사항을 삭제할까요?");
+    if (!shouldDelete) {
+      return;
+    }
+    dashboardNoticeItems = dashboardNoticeItems.filter((item) => item.id !== state.selectedAdminNoticeId);
+    state.selectedAdminNoticeId = dashboardNoticeItems[0]?.id ?? null;
+    saveDashboardNotices();
+    render();
+  });
+
+  elements.adminAddDashboardMilestoneButton?.addEventListener("click", () => {
+    openMilestoneModal("create");
+  });
+
+  elements.adminEditDashboardMilestoneButton?.addEventListener("click", () => {
+    if (!state.selectedAdminDashboardMilestoneId) {
+      window.alert("수정할 주요 일정을 선택해 주세요.");
+      return;
+    }
+    openMilestoneModal("edit", state.selectedAdminDashboardMilestoneId);
+  });
+
+  elements.adminDeleteDashboardMilestoneButton?.addEventListener("click", () => {
+    if (!state.selectedAdminDashboardMilestoneId) {
+      window.alert("삭제할 주요 일정을 선택해 주세요.");
+      return;
+    }
+    deleteMilestone(state.selectedAdminDashboardMilestoneId);
+    state.selectedAdminDashboardMilestoneId = getSortedMilestones()[0]?.id ?? null;
+    render();
+  });
+
   elements.addProjectButton?.addEventListener("click", () => {
     openProjectModal("create");
   });
@@ -8226,6 +9947,38 @@ function bindEvents() {
     }
 
     deleteQualification(state.selectedQualificationId);
+  });
+
+  elements.addCertificationExamButton?.addEventListener("click", () => {
+    if (!hasQualificationManagementAccess()) {
+      return;
+    }
+    openCertificationExamModal("create");
+  });
+
+  elements.editCertificationExamButton?.addEventListener("click", () => {
+    if (!hasQualificationManagementAccess()) {
+      return;
+    }
+    if (!state.selectedCertificationExamId) {
+      return;
+    }
+    openCertificationExamModal("edit", state.selectedCertificationExamId);
+  });
+
+  elements.deleteCertificationExamButton?.addEventListener("click", () => {
+    if (!hasQualificationManagementAccess()) {
+      return;
+    }
+    const checkedIds = getSelectedCertificationExamIds();
+    if (checkedIds.length) {
+      deleteCertificationExams(checkedIds);
+      return;
+    }
+    if (!state.selectedCertificationExamId) {
+      return;
+    }
+    deleteCertificationExams([state.selectedCertificationExamId]);
   });
 
   elements.surveyQuestionForm?.addEventListener("submit", (event) => {
@@ -8430,6 +10183,8 @@ function bindEvents() {
   elements.projectFormCancel?.addEventListener("click", closeProjectModal);
   elements.qualificationModalClose?.addEventListener("click", closeQualificationModal);
   elements.qualificationFormCancel?.addEventListener("click", closeQualificationModal);
+  elements.certificationExamModalClose?.addEventListener("click", closeCertificationExamModal);
+  elements.certificationExamFormCancel?.addEventListener("click", closeCertificationExamModal);
   elements.milestoneModalClose?.addEventListener("click", closeMilestoneModal);
   elements.milestoneFormCancel?.addEventListener("click", closeMilestoneModal);
   elements.educationAdminModalClose?.addEventListener("click", closeEducationAdminModal);
@@ -8445,6 +10200,15 @@ function bindEvents() {
     if (event.target === elements.qualificationModal) {
       closeQualificationModal();
     }
+  });
+
+  elements.certificationExamModal?.addEventListener("click", (event) => {
+    if (event.target === elements.certificationExamModal) {
+      closeCertificationExamModal();
+    }
+  });
+  elements.certificationExamType?.addEventListener("change", (event) => {
+    renderCertificationExamGradeFieldOptions(event.target.value);
   });
 
   elements.milestoneModal?.addEventListener("click", (event) => {
@@ -8475,7 +10239,6 @@ function bindEvents() {
   elements.qualificationType?.addEventListener("change", (event) => {
     renderQualificationGradeFieldOptions(event.target.value);
   });
-
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") {
       return;
@@ -8493,6 +10256,11 @@ function bindEvents() {
 
     if (isModalVisible(elements.qualificationModal)) {
       closeQualificationModal();
+      return;
+    }
+
+    if (isModalVisible(elements.certificationExamModal)) {
+      closeCertificationExamModal();
       return;
     }
 
@@ -8525,6 +10293,26 @@ function bindEvents() {
     }
 
     upsertQualification(readQualificationFormValues());
+  });
+
+  elements.certificationExamForm?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!elements.certificationExamForm.reportValidity()) {
+      return;
+    }
+    const formValues = readCertificationExamFormValues();
+    if (parseDate(formValues.applicationStartDate) > parseDate(formValues.applicationEndDate)) {
+      window.alert("시험 접수시작일이 접수종료일보다 늦을 수 없습니다.");
+      return;
+    }
+    if (isValidDateString(formValues.resultAnnouncementDate)) {
+      const examDateToken = String(formValues.examDateTime || "").slice(0, 10);
+      if (isValidDateString(examDateToken) && parseDate(formValues.resultAnnouncementDate) < parseDate(examDateToken)) {
+        window.alert("결과발표일은 시험일시보다 빠를 수 없습니다.");
+        return;
+      }
+    }
+    upsertCertificationExam(formValues);
   });
 
   elements.milestoneForm?.addEventListener("submit", (event) => {
@@ -8592,6 +10380,8 @@ function render() {
   const filteredProjects = getFilteredProjects();
   const filteredQualifications = getFilteredQualifications();
   renderMetrics();
+  renderDashboardPage();
+  renderAdminDashboardDataBoards();
   renderQualificationMetrics();
   renderQualificationGradeFilterOptions();
   renderEducationCalendarPage();
@@ -8601,15 +10391,20 @@ function render() {
   renderHero(filteredProjects);
   renderTable(filteredProjects);
   renderQualificationTable(filteredQualifications);
+  renderCertificationExamTable();
+  renderCertificationExamDetailCard();
+  renderCertificationApplicantTable();
   renderQualificationCompanyBoard(filteredQualifications);
   renderQualificationTypeBoard(filteredQualifications);
   renderLeague(filteredProjects);
   renderDetailCard(filteredProjects);
   syncTaskActionButtons(filteredProjects);
   syncQualificationActionButtons(filteredQualifications);
+  syncCertificationExamActionButtons();
   renderMilestones();
   attachTableEvents();
   attachQualificationTableEvents();
+  attachCertificationExamTableEvents();
   attachTaskPaginationEvents();
   attachQualificationPaginationEvents();
   attachEducationAdminPaginationEvents();
@@ -8630,6 +10425,8 @@ function init() {
     getProjects: () => JSON.parse(JSON.stringify(projects)),
     getMilestones: () => JSON.parse(JSON.stringify(milestoneItems)),
     getQualifications: () => JSON.parse(JSON.stringify(qualifications)),
+    getCertificationExams: () => JSON.parse(JSON.stringify(certificationExams)),
+    getCertificationExamApplications: () => JSON.parse(JSON.stringify(certificationExamApplications)),
     getEducationSchedules: () => JSON.parse(JSON.stringify(educationSchedules)),
     getEducationEnrollments: () => JSON.parse(JSON.stringify(educationEnrollments)),
     getEducationCostDetails: () => JSON.parse(JSON.stringify(educationCostDetailsBySchedule)),
@@ -8638,6 +10435,8 @@ function init() {
     setProjects: replaceProjectsFromExternal,
     setMilestones: replaceMilestonesFromExternal,
     setQualifications: replaceQualificationsFromExternal,
+    setCertificationExams: replaceCertificationExamsFromExternal,
+    setCertificationExamApplications: replaceCertificationExamApplicationsFromExternal,
     setEducationSchedules: replaceEducationSchedulesFromExternal,
     setEducationEnrollments: replaceEducationEnrollmentsFromExternal,
     setEducationCostDetails: replaceEducationCostDetailsFromExternal,

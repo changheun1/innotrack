@@ -22,10 +22,10 @@
       </div>
 
       <nav class="side-nav" aria-label="주요 메뉴">
-        <button class="nav-item" type="button" data-page-target="dashboard">
+        <button class="nav-item is-active" type="button" data-page-target="dashboard">
           <span>Dashboard</span>
         </button>
-        <button class="nav-item is-active" type="button" data-page-target="innovation">
+        <button class="nav-item" type="button" data-page-target="innovation">
           <span>혁신과제</span>
         </button>
         <button class="nav-item" type="button" data-page-target="qualification">
@@ -45,6 +45,9 @@
             </button>
             <button class="nav-subitem" type="button" data-page-target="education-admin" hidden>
               <span>교육관리</span>
+            </button>
+            <button class="nav-subitem" type="button" data-page-target="certification-management" hidden>
+              <span>자격검정관리</span>
             </button>
             <button class="nav-subitem" type="button" data-page-target="survey-management" hidden>
               <span>설문관리</span>
@@ -71,13 +74,6 @@
         <div id="milestone-list" class="milestone-list sidebar-milestone-list"></div>
       </section>
 
-      <section class="side-panel profile-panel">
-        <div id="profile-avatar" class="avatar">HJ</div>
-        <div>
-          <strong id="profile-name">로컬 데모 사용자</strong>
-          <p id="profile-role">로그인 전</p>
-        </div>
-      </section>
       <section class="side-panel family-site-panel">
         <label class="family-site-field" for="family-site-select">
           <span>Family site</span>
@@ -90,7 +86,7 @@
     </aside>
 
     <main class="main-view">
-      <section class="page-view is-active" data-page-view="innovation">
+      <section class="page-view" data-page-view="innovation" hidden>
       <header class="topbar">
         <div>
           <p class="eyebrow">Innovation Task Management</p>
@@ -102,6 +98,7 @@
         <div class="topbar-actions auth-toolbar" data-auth-toolbar>
           <div id="auth-user" class="auth-user" hidden>
             <span id="auth-user-email" class="auth-user-email"></span>
+            <button id="open-profile-modal-button" type="button" class="ghost-button" hidden>정보수정</button>
             <button id="open-users-modal-button" type="button" class="ghost-button" hidden>회원관리</button>
             <button id="logout-button" type="button" class="ghost-button">로그아웃</button>
           </div>
@@ -261,21 +258,13 @@
       </section>
       </section>
 
-      <section class="page-view page-view-empty" data-page-view="dashboard" hidden>
+      <section class="page-view is-active" data-page-view="dashboard">
         <header class="topbar">
           <div>
             <p class="eyebrow">Dashboard</p>
-            <h2>Dashboard</h2>
-          </div>
-          <div class="topbar-actions auth-toolbar" data-auth-toolbar-mirror>
-            <div class="auth-user" data-auth-user-mirror hidden>
-              <span class="auth-user-email" data-auth-user-email-mirror></span>
-              <button type="button" class="ghost-button" data-auth-open-users-mirror hidden>회원관리</button>
-              <button type="button" class="ghost-button" data-auth-logout-mirror>로그아웃</button>
-            </div>
-            <div class="auth-guest-actions" data-auth-guest-actions-mirror>
-              <button type="button" class="ghost-button" data-auth-open-signup-mirror>회원가입</button>
-              <button type="button" class="primary-button" data-auth-open-login-mirror>로그인</button>
+            <div class="topbar-title-row">
+              <h2>통합 대시보드</h2>
+              
             </div>
           </div>
           <div class="topbar-actions auth-toolbar" data-auth-toolbar-mirror>
@@ -290,7 +279,60 @@
             </div>
           </div>
         </header>
-        <section class="blank-page-shell" aria-label="Dashboard 빈 페이지"></section>
+
+        <section class="workspace-grid" style="grid-template-columns:1.7fr 1fr;">
+          <section class="board-card">
+            <div class="section-head">
+              <div>
+                <p class="panel-kicker">Notice</p>
+                <h3>공지사항</h3>
+              </div>
+            </div>
+            <div id="dashboard-notice-list" class="milestone-list"></div>
+          </section>
+          <section class="board-card">
+            <div class="section-head">
+              <div>
+                <p class="panel-kicker">Key Milestone</p>
+                <h3>주요 일정</h3>
+              </div>
+            </div>
+            <div id="dashboard-milestone-list" class="milestone-list"></div>
+          </section>
+        </section>
+
+        <section class="workspace-grid">
+          <section class="board-card" style="grid-column:1 / -1;">
+            <div class="section-head small-head">
+              <div>
+                <p class="panel-kicker">Innovation Task</p>
+                <h3>법인별 과제건수/진행률</h3>
+              </div>
+            </div>
+            <div id="dashboard-innovation-company-chart"></div>
+          </section>
+        </section>
+
+        <section class="workspace-grid" style="grid-template-columns:1.35fr 0.65fr;">
+          <section class="board-card">
+            <div class="section-head small-head">
+              <div>
+                <p class="panel-kicker">Qualification</p>
+                <h3>법인별 자격 취득 현황</h3>
+              </div>
+            </div>
+            <div id="dashboard-qualification-stacked-chart"></div>
+          </section>
+          <section class="board-card">
+            <div class="section-head small-head">
+              <div>
+                <p class="panel-kicker">Certification Pass</p>
+                <h3>자격유형별 합격률</h3>
+              </div>
+            </div>
+            <div id="dashboard-certification-pass-chart"></div>
+          </section>
+        </section>
       </section>
 
       <section class="page-view qualification-page" data-page-view="qualification" hidden>
@@ -528,6 +570,7 @@
             <div id="education-schedule-detail" class="education-detail-card"></div>
           </aside>
         </section>
+
       </section>
 
       <section class="page-view education-page" data-page-view="my-learning" hidden>
@@ -889,6 +932,127 @@
         </section>
       </section>
 
+      <section class="page-view education-page" data-page-view="certification-management" hidden>
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Certification Management</p>
+            <div class="topbar-title-row">
+              <h2>자격검정관리</h2>
+              <p class="topbar-copy">자격현황 기준 정보와 시험 운영 정보를 함께 관리합니다.</p>
+            </div>
+          </div>
+          <div class="topbar-actions auth-toolbar" data-auth-toolbar-mirror>
+            <div class="auth-user" data-auth-user-mirror hidden>
+              <span class="auth-user-email" data-auth-user-email-mirror></span>
+              <button type="button" class="ghost-button" data-auth-open-users-mirror hidden>회원관리</button>
+              <button type="button" class="ghost-button" data-auth-logout-mirror>로그아웃</button>
+            </div>
+            <div class="auth-guest-actions" data-auth-guest-actions-mirror>
+              <button type="button" class="ghost-button" data-auth-open-signup-mirror>회원가입</button>
+              <button type="button" class="primary-button" data-auth-open-login-mirror>로그인</button>
+            </div>
+          </div>
+        </header>
+
+        <section class="workspace-grid qualification-workspace-grid">
+          <section class="board-card qualification-board-card">
+            <div class="section-head">
+              <div>
+                <p class="panel-kicker">Certification Exam Board</p>
+                <h3>자격검정 운영 테이블</h3>
+              </div>
+              <div class="board-actions" aria-label="자격검정관리 작업">
+                <button id="add-certification-exam-button" class="action-button board-action-button" type="button">등록</button>
+                <button id="edit-certification-exam-button" class="action-button board-action-button" type="button">수정</button>
+                <button id="delete-certification-exam-button" class="action-button action-button-danger board-action-button" type="button">삭제</button>
+              </div>
+            </div>
+            <div class="table-wrap qualification-table-wrap">
+              <table class="task-table qualification-table">
+                <colgroup>
+                  <col style="width: 56px;">
+                  <col style="width: 30%;">
+                  <col style="width: 34%;">
+                  <col style="width: 22%;">
+                  <col style="width: 14%;">
+                </colgroup>
+                <thead>
+                  <tr>
+                    <th scope="col">선택</th>
+                    <th scope="col">시험명</th>
+                    <th scope="col">접수기간</th>
+                    <th scope="col">시험일시</th>
+                    <th scope="col">결과발표일</th>
+                  </tr>
+                </thead>
+                <tbody id="certification-exam-table-body"></tbody>
+              </table>
+            </div>
+          </section>
+          <aside class="side-stack">
+            <section class="board-card compact-card education-admin-detail-board">
+              <div class="section-head small-head">
+                <div>
+                  <p class="panel-kicker">Selected Exam</p>
+                  <h3>자격검정 상세정보</h3>
+                </div>
+              </div>
+              <div id="certification-exam-detail-card" class="detail-card education-admin-detail-card"></div>
+            </section>
+          </aside>
+        </section>
+        <section class="board-card education-enrollment-board">
+          <div class="section-head">
+            <div>
+              <p class="panel-kicker">Exam Applicants</p>
+              <h3>시험응시자 명단</h3>
+              <p id="certification-applicant-selected-meta" class="education-enrollment-selected-meta">선택한 시험 기준 응시자 정보를 확인합니다.</p>
+            </div>
+          </div>
+          <div class="filter-toolbar education-enrollment-filter-toolbar">
+            <label class="filter-field">
+              <span>조회 범위</span>
+              <select id="certification-applicant-scope-filter">
+                <option value="selected">선택 과정</option>
+                <option value="all">전체항목</option>
+              </select>
+            </label>
+            <div class="board-actions education-enrollment-actions">
+              <button id="certification-applicant-complete-button" class="action-button board-action-button" type="button">합격</button>
+              <button id="certification-applicant-cancel-complete-button" class="outline-button board-action-button" type="button">합격취소</button>
+              <button id="certification-applicant-delete-button" class="action-button action-button-danger board-action-button" type="button">삭제</button>
+            </div>
+          </div>
+          <div class="table-wrap education-enrollment-table-wrap">
+            <table class="task-table education-enrollment-table">
+              <colgroup>
+                <col style="width: 44px;">
+                <col>
+                <col>
+                <col>
+                <col>
+                <col>
+                <col>
+                <col>
+              </colgroup>
+              <thead>
+                <tr>
+                  <th scope="col">선택</th>
+                  <th scope="col">시험명</th>
+                  <th scope="col">성명 / 직책</th>
+                  <th scope="col">이메일</th>
+                  <th scope="col">휴대전화번호</th>
+                  <th scope="col">자격증번호</th>
+                  <th scope="col">취득일자</th>
+                  <th scope="col">접수일</th>
+                </tr>
+              </thead>
+              <tbody id="certification-applicant-table-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
       <section class="page-view education-page" data-page-view="survey-management" hidden>
         <header class="topbar">
           <div>
@@ -1079,6 +1243,32 @@
               <button id="admin-export-survey-results-button" class="ghost-button admin-download-button" type="button">설문결과 이력 다운로드</button>
             </div>
           </article>
+
+          <article class="board-card admin-tools-card">
+            <div class="section-head small-head">
+              <div>
+                <p class="panel-kicker">Dashboard</p>
+                <h3>공지사항 관리</h3>
+              </div>
+              <div class="board-actions">
+                <button id="admin-add-notice-button" class="action-button board-action-button" type="button">등록</button>
+                <button id="admin-edit-notice-button" class="action-button board-action-button" type="button">수정</button>
+                <button id="admin-delete-notice-button" class="action-button action-button-danger board-action-button" type="button">삭제</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="task-table admin-dashboard-table">
+                <thead>
+                  <tr>
+                    <th scope="col">제목</th>
+                    <th scope="col">게시일</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-notice-table-body"></tbody>
+              </table>
+            </div>
+          </article>
+
         </section>
       </section>
     </main>
@@ -1154,9 +1344,12 @@
             <span>아이디 저장</span>
           </label>
         </div>
-        <div class="modal-actions">
-          <button class="secondary-button" type="button" data-auth-close="login-modal">취소</button>
-          <button class="primary-button" type="submit">로그인</button>
+        <div class="modal-actions login-modal-actions">
+          <button id="forgot-password-button" class="auth-link-button" type="button">비밀번호 찾기</button>
+          <div class="login-modal-actions-right">
+            <button class="secondary-button" type="button" data-auth-close="login-modal">취소</button>
+            <button class="primary-button" type="submit">로그인</button>
+          </div>
         </div>
       </form>
     </section>
@@ -1194,6 +1387,41 @@
           </tbody>
         </table>
       </div>
+    </section>
+  </div>
+
+  <div id="profile-modal" class="modal-backdrop" hidden>
+    <section class="modal-card modal-card-compact auth-modal-card" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
+      <div class="modal-head">
+        <div>
+          <p class="panel-kicker">Membership</p>
+          <h3 id="profile-modal-title">내 정보 수정</h3>
+          <p class="modal-copy">일반회원 계정의 이름, 법인, 부서를 수정합니다.</p>
+        </div>
+        <button class="modal-close" type="button" data-auth-close="profile-modal" aria-label="내 정보 수정 창 닫기">×</button>
+      </div>
+      <form id="profile-form" class="project-form auth-form">
+        <div class="project-form-grid auth-form-grid">
+          <label class="form-field form-field-full">
+            <span>이름</span>
+            <input id="profile-name-input" name="name" type="text" required placeholder="예: 홍길동">
+          </label>
+          <label class="form-field form-field-full">
+            <span>법인</span>
+            <select id="profile-company-input" name="company">
+              <option value="">선택 안함</option>
+            </select>
+          </label>
+          <label class="form-field form-field-full">
+            <span>부서</span>
+            <input id="profile-department-input" name="department" type="text" placeholder="예: 경영혁신팀">
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary-button" type="button" data-auth-close="profile-modal">취소</button>
+          <button class="primary-button" type="submit">저장</button>
+        </div>
+      </form>
     </section>
   </div>
 
@@ -1274,10 +1502,6 @@
             <span>추천 대상자</span>
             <input id="education-admin-recommended-target" name="recommendedTarget" type="text" placeholder="예: 책임 승진자">
           </label>
-          <label class="form-field form-field-span-3">
-            <span>설문지</span>
-            <select id="education-admin-survey-form" name="surveyFormId"></select>
-          </label>
           <label class="form-field form-field-span-2">
             <span>필수교육</span>
             <select id="education-admin-required-type" name="requiredType" required>
@@ -1304,20 +1528,20 @@
             <input id="education-admin-target-date-text" name="targetDateText" type="text" placeholder="예: 3월19~20일">
           </label>
           <label class="form-field form-field-span-3">
-            <span>시작일</span>
-            <input id="education-admin-start-date" name="startDate" type="date" required>
-          </label>
-          <label class="form-field form-field-span-3">
-            <span>종료일</span>
-            <input id="education-admin-end-date" name="endDate" type="date" required>
-          </label>
-          <label class="form-field form-field-span-3">
             <span>접수시작일</span>
             <input id="education-admin-application-start-date" name="applicationStartDate" type="date" required>
           </label>
           <label class="form-field form-field-span-3">
             <span>접수종료일</span>
             <input id="education-admin-application-end-date" name="applicationEndDate" type="date" required>
+          </label>
+          <label class="form-field form-field-span-3">
+            <span>교육시작일</span>
+            <input id="education-admin-start-date" name="startDate" type="date" required>
+          </label>
+          <label class="form-field form-field-span-3">
+            <span>교육종료일</span>
+            <input id="education-admin-end-date" name="endDate" type="date" required>
           </label>
           <label class="form-field form-field-span-3">
             <span>상태</span>
@@ -1328,6 +1552,10 @@
               <option value="completed_needs_settlement">완료(정산필요)</option>
               <option value="settled">정산완료</option>
             </select>
+          </label>
+          <label class="form-field form-field-span-3">
+            <span>설문지</span>
+            <select id="education-admin-survey-form" name="surveyFormId"></select>
           </label>
           <label class="form-field form-field-span-3">
             <span>완료여부</span>
@@ -1369,6 +1597,87 @@
         <div class="modal-actions">
           <button id="education-admin-form-cancel" class="secondary-button" type="button">취소</button>
           <button id="education-admin-form-submit" class="primary-button" type="submit">등록하기</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <div id="certification-exam-modal" class="modal-backdrop" hidden>
+    <section class="modal-card qualification-modal-card" role="dialog" aria-modal="true" aria-labelledby="certification-exam-modal-title">
+      <div class="modal-head">
+        <div>
+          <p class="panel-kicker">Certification Exam Editor</p>
+          <h3 id="certification-exam-modal-title">자격검정 정보 등록</h3>
+          <p class="modal-copy">자격현황 기준 정보와 시험 운영 정보를 함께 입력합니다.</p>
+        </div>
+        <button id="certification-exam-modal-close" class="modal-close" type="button" aria-label="자격검정 정보 창 닫기">×</button>
+      </div>
+      <form id="certification-exam-form" class="project-form">
+        <div class="project-form-grid qualification-form-grid">
+          <label class="form-field form-field-span-3">
+            <span>시험구분</span>
+            <select id="certification-exam-type" name="examType" required></select>
+          </label>
+          <label class="form-field form-field-span-3">
+            <span>등급</span>
+            <select id="certification-exam-grade" name="examGrade" required></select>
+          </label>
+          <label class="form-field form-field-span-6">
+            <span>시험명</span>
+            <input id="certification-exam-title" name="examTitle" type="text" required placeholder="예: AICA Level3 정기검정">
+          </label>
+          <label class="form-field form-field-span-6">
+            <span>응시대상</span>
+            <input id="certification-exam-target" name="targetAudience" type="text" required placeholder="예: AI 실무 담당자">
+          </label>
+          <label class="form-field form-field-span-6">
+            <span>자격요건</span>
+            <input id="certification-exam-requirement" name="qualificationRequirement" type="text" required placeholder="예: 사전 교육 수료자">
+          </label>
+          <label class="form-field form-field-span-6">
+            <span>합격기준</span>
+            <input id="certification-exam-pass-criteria" name="passCriteria" type="text" required placeholder="예: 100점 만점 중 70점 이상">
+          </label>
+          <label class="form-field form-field-span-3">
+            <span>접수시작일</span>
+            <input id="certification-exam-application-start-date" name="applicationStartDate" type="date" required>
+          </label>
+          <label class="form-field form-field-span-3">
+            <span>접수마감일</span>
+            <input id="certification-exam-application-end-date" name="applicationEndDate" type="date" required>
+          </label>
+          <label class="form-field form-field-span-6">
+            <span>시험일시</span>
+            <input id="certification-exam-datetime" name="examDateTime" type="datetime-local" required>
+          </label>
+          <label class="form-field form-field-span-6">
+            <span>결과발표일</span>
+            <input id="certification-exam-result-date" name="resultAnnouncementDate" type="date" required>
+          </label>
+          <label class="form-field form-field-span-4">
+            <span>시험장소</span>
+            <input id="certification-exam-location" name="examLocation" type="text" required placeholder="예: 본사 교육장">
+          </label>
+          <label class="form-field form-field-span-2">
+            <span>정원</span>
+            <input id="certification-exam-capacity" name="capacity" type="number" min="1" step="1" required>
+          </label>
+          <label class="form-field form-field-span-2">
+            <span>운영상태</span>
+            <select id="certification-exam-status" name="operationStatus" required>
+              <option value="planned">예정</option>
+              <option value="in_progress">진행중</option>
+              <option value="completed">완료</option>
+            </select>
+          </label>
+          <label class="form-field form-field-span-6">
+            <span>비고</span>
+            <input id="certification-exam-note" name="note" type="text" placeholder="예: 시험과정 설명(목적, 범위, 준비사항 등)을 입력하세요">
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button id="certification-exam-form-cancel" class="secondary-button" type="button">취소</button>
+          <button id="certification-exam-form-submit" class="primary-button" type="submit">등록하기</button>
         </div>
       </form>
     </section>
