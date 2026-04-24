@@ -139,6 +139,7 @@
     currentUser: null,
     currentUserProfile: null,
     pendingSignupProfile: null,
+    pendingSignupUid: "",
     projectsRef: null,
     milestonesRef: null,
     qualificationsRef: null,
@@ -920,6 +921,7 @@
         email,
         password
       );
+      state.pendingSignupUid = String(credential.user?.uid || "");
 
       const ensuredName = pendingProfile.name || credential.user.email?.split("@")[0] || "???";
       const ensuredCompany = pendingProfile.company || "";
@@ -940,13 +942,12 @@
       await state.db.ref(`users/${credential.user.uid}`).set(nextProfile);
       state.currentUserProfile = nextProfile;
 
-      state.pendingSignupProfile = null;
-
       elements.signupForm.reset();
       closeModal(elements.signupModal);
       window.alert(TEXT.signupDone);
     } catch (error) {
       state.pendingSignupProfile = null;
+      state.pendingSignupUid = "";
       window.alert(`${TEXT.signupFail}\n${error?.message || ""}`.trim());
     }
   }
@@ -1235,14 +1236,32 @@
     try {
       const pendingProfile = (
         state.pendingSignupProfile
-        && String(state.pendingSignupProfile.email || "").toLowerCase() === String(user.email || "").toLowerCase()
+        && (
+          (state.pendingSignupUid && state.pendingSignupUid === String(user.uid || ""))
+          || String(state.pendingSignupProfile.email || "").toLowerCase() === String(user.email || "").toLowerCase()
+        )
       )
         ? state.pendingSignupProfile
         : null;
 
       state.currentUserProfile = await ensureUserProfile(user, pendingProfile || undefined);
       if (pendingProfile) {
+        await state.db.ref(`users/${user.uid}`).update({
+          name: String(pendingProfile.name || "").trim() || String(user.email || "").split("@")[0] || "???",
+          company: String(pendingProfile.company || "").trim(),
+          department: String(pendingProfile.department || "").trim(),
+          updatedAt: Date.now(),
+          lastLoginAt: Date.now(),
+        });
+
+        state.currentUserProfile = {
+          ...state.currentUserProfile,
+          name: String(pendingProfile.name || "").trim() || state.currentUserProfile?.name || String(user.email || "").split("@")[0] || "???",
+          company: String(pendingProfile.company || "").trim(),
+          department: String(pendingProfile.department || "").trim(),
+        };
         state.pendingSignupProfile = null;
+        state.pendingSignupUid = "";
       }
       updateAuthUi();
       attachDataSubscriptions();
