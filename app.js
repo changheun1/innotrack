@@ -2946,6 +2946,12 @@ function saveEducationSchedules() {
   } catch (error) {
     // local fallback only
   }
+
+  try {
+    window.innotrackFirebase?.saveEducationSchedules?.(educationSchedules);
+  } catch (error) {
+    // ignore remote sync failures and keep local persistence
+  }
 }
 
 function saveEducationEnrollments() {
@@ -2953,6 +2959,12 @@ function saveEducationEnrollments() {
     window.localStorage.setItem(EDUCATION_ENROLLMENT_STORAGE_KEY, JSON.stringify(educationEnrollments));
   } catch (error) {
     // local fallback only
+  }
+
+  try {
+    window.innotrackFirebase?.saveEducationEnrollments?.(educationEnrollments);
+  } catch (error) {
+    // ignore remote sync failures and keep local persistence
   }
 }
 
@@ -2962,6 +2974,12 @@ function saveEducationCostDetails() {
   } catch (error) {
     // local fallback only
   }
+
+  try {
+    window.innotrackFirebase?.saveEducationCostDetails?.(educationCostDetailsBySchedule);
+  } catch (error) {
+    // ignore remote sync failures and keep local persistence
+  }
 }
 
 function saveSurveyQuestions() {
@@ -2970,6 +2988,12 @@ function saveSurveyQuestions() {
   } catch (error) {
     // local fallback only
   }
+
+  try {
+    window.innotrackFirebase?.saveSurveyForms?.(surveyForms);
+  } catch (error) {
+    // ignore remote sync failures and keep local persistence
+  }
 }
 
 function saveSurveyResponses() {
@@ -2977,6 +3001,12 @@ function saveSurveyResponses() {
     window.localStorage.setItem(SURVEY_RESPONSE_STORAGE_KEY, JSON.stringify(surveyResponses));
   } catch (error) {
     // local fallback only
+  }
+
+  try {
+    window.innotrackFirebase?.saveSurveyResponses?.(surveyResponses);
+  } catch (error) {
+    // ignore remote sync failures and keep local persistence
   }
 }
 
@@ -2999,6 +3029,46 @@ function persistMilestonesLocally() {
 function persistQualificationsLocally() {
   try {
     window.localStorage.setItem(QUALIFICATION_STORAGE_KEY, JSON.stringify(qualifications));
+  } catch (error) {
+    return;
+  }
+}
+
+function persistEducationSchedulesLocally() {
+  try {
+    window.localStorage.setItem(EDUCATION_SCHEDULE_STORAGE_KEY, JSON.stringify(educationSchedules));
+  } catch (error) {
+    return;
+  }
+}
+
+function persistEducationEnrollmentsLocally() {
+  try {
+    window.localStorage.setItem(EDUCATION_ENROLLMENT_STORAGE_KEY, JSON.stringify(educationEnrollments));
+  } catch (error) {
+    return;
+  }
+}
+
+function persistEducationCostDetailsLocally() {
+  try {
+    window.localStorage.setItem(EDUCATION_COST_DETAIL_STORAGE_KEY, JSON.stringify(educationCostDetailsBySchedule));
+  } catch (error) {
+    return;
+  }
+}
+
+function persistSurveyFormsLocally() {
+  try {
+    window.localStorage.setItem(SURVEY_FORM_STORAGE_KEY, JSON.stringify(surveyForms));
+  } catch (error) {
+    return;
+  }
+}
+
+function persistSurveyResponsesLocally() {
+  try {
+    window.localStorage.setItem(SURVEY_RESPONSE_STORAGE_KEY, JSON.stringify(surveyResponses));
   } catch (error) {
     return;
   }
@@ -3029,6 +3099,72 @@ function replaceQualificationsFromExternal(list = []) {
     ?? qualifications[0]?.id
     ?? null;
   persistQualificationsLocally();
+  render();
+}
+
+function replaceEducationSchedulesFromExternal(list = []) {
+  const sourceList = Array.isArray(list) ? list : [];
+  educationSchedules = sourceList.map((schedule, index) =>
+    normalizeEducationSchedule(schedule, `EDU-S-${String(index + 1).padStart(3, "0")}`));
+  syncAllEducationScheduleCostSummaries();
+  state.selectedEducationScheduleId = educationSchedules.find((schedule) => schedule.id === state.selectedEducationScheduleId)?.id
+    ?? educationSchedules[0]?.id
+    ?? null;
+  state.selectedEducationAdminId = educationSchedules.find((schedule) => schedule.id === state.selectedEducationAdminId)?.id
+    ?? educationSchedules[0]?.id
+    ?? null;
+  persistEducationSchedulesLocally();
+  render();
+}
+
+function replaceEducationEnrollmentsFromExternal(list = []) {
+  const sourceList = Array.isArray(list) ? list : [];
+  educationEnrollments = sourceList.map((enrollment, index) =>
+    normalizeEducationEnrollment(enrollment, `EDU-ENR-${String(index + 1).padStart(3, "0")}`));
+  pruneSelectedEducationEnrollmentIds();
+  state.myLearningEvaluationEnrollmentId = educationEnrollments.some(
+    (enrollment) => enrollment.id === state.myLearningEvaluationEnrollmentId,
+  )
+    ? state.myLearningEvaluationEnrollmentId
+    : null;
+  persistEducationEnrollmentsLocally();
+  render();
+}
+
+function replaceEducationCostDetailsFromExternal(value = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  educationCostDetailsBySchedule = Object.entries(source).reduce((accumulator, [scheduleId, items]) => {
+    if (!Array.isArray(items)) {
+      return accumulator;
+    }
+
+    accumulator[scheduleId] = items.map((item, index) =>
+      normalizeEducationCostItem(item, `${scheduleId}-COST-${String(index + 1).padStart(3, "0")}`));
+    return accumulator;
+  }, {});
+  syncAllEducationScheduleCostSummaries();
+  persistEducationCostDetailsLocally();
+  render();
+}
+
+function replaceSurveyFormsFromExternal(list = []) {
+  const sourceList = Array.isArray(list) ? list : [];
+  surveyForms = sourceList
+    .map((form, index) => normalizeSurveyForm(form, `SVF-${String(index + 1).padStart(3, "0")}`, index + 1))
+    .sort((left, right) => left.order - right.order);
+  state.selectedSurveyFormId = surveyForms.find((form) => form.id === state.selectedSurveyFormId)?.id
+    ?? surveyForms[0]?.id
+    ?? null;
+  persistSurveyFormsLocally();
+  render();
+}
+
+function replaceSurveyResponsesFromExternal(list = []) {
+  const sourceList = Array.isArray(list) ? list : [];
+  surveyResponses = sourceList
+    .map((response, index) => normalizeSurveyResponse(response, `SVR-${String(index + 1).padStart(3, "0")}`))
+    .sort((left, right) => right.submittedAt.localeCompare(left.submittedAt));
+  persistSurveyResponsesLocally();
   render();
 }
 
@@ -5056,7 +5192,7 @@ function renderEducationAdminFilterOptions(rows = buildEducationAdminRows()) {
     elements.educationAdminDivisionFilter.value = state.educationAdminDivision;
   }
 
-  const allowedStatusFilter = ["all", "planned", "in_progress", "completed_needs_settlement", "settled"];
+  const allowedStatusFilter = ["all", "planned", "in_progress", "completed", "completed_needs_settlement", "settled"];
   if (!allowedStatusFilter.includes(state.educationAdminStatus)) {
     state.educationAdminStatus = "all";
   }
@@ -8494,9 +8630,19 @@ function init() {
     getProjects: () => JSON.parse(JSON.stringify(projects)),
     getMilestones: () => JSON.parse(JSON.stringify(milestoneItems)),
     getQualifications: () => JSON.parse(JSON.stringify(qualifications)),
+    getEducationSchedules: () => JSON.parse(JSON.stringify(educationSchedules)),
+    getEducationEnrollments: () => JSON.parse(JSON.stringify(educationEnrollments)),
+    getEducationCostDetails: () => JSON.parse(JSON.stringify(educationCostDetailsBySchedule)),
+    getSurveyForms: () => JSON.parse(JSON.stringify(surveyForms)),
+    getSurveyResponses: () => JSON.parse(JSON.stringify(surveyResponses)),
     setProjects: replaceProjectsFromExternal,
     setMilestones: replaceMilestonesFromExternal,
     setQualifications: replaceQualificationsFromExternal,
+    setEducationSchedules: replaceEducationSchedulesFromExternal,
+    setEducationEnrollments: replaceEducationEnrollmentsFromExternal,
+    setEducationCostDetails: replaceEducationCostDetailsFromExternal,
+    setSurveyForms: replaceSurveyFormsFromExternal,
+    setSurveyResponses: replaceSurveyResponsesFromExternal,
     render,
   };
 }

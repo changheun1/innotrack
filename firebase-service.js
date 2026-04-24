@@ -111,6 +111,11 @@
     projectsRef: null,
     milestonesRef: null,
     qualificationsRef: null,
+    educationSchedulesRef: null,
+    educationEnrollmentsRef: null,
+    educationCostDetailsRef: null,
+    surveyFormsRef: null,
+    surveyResponsesRef: null,
     usersRef: null,
   };
 
@@ -426,9 +431,19 @@
     unsubscribeRef(state.projectsRef);
     unsubscribeRef(state.milestonesRef);
     unsubscribeRef(state.qualificationsRef);
+    unsubscribeRef(state.educationSchedulesRef);
+    unsubscribeRef(state.educationEnrollmentsRef);
+    unsubscribeRef(state.educationCostDetailsRef);
+    unsubscribeRef(state.surveyFormsRef);
+    unsubscribeRef(state.surveyResponsesRef);
     state.projectsRef = null;
     state.milestonesRef = null;
     state.qualificationsRef = null;
+    state.educationSchedulesRef = null;
+    state.educationEnrollmentsRef = null;
+    state.educationCostDetailsRef = null;
+    state.surveyFormsRef = null;
+    state.surveyResponsesRef = null;
   }
 
   function unsubscribeUsersRef() {
@@ -674,6 +689,44 @@
     return refInstance;
   }
 
+  function seedObjectCollection(path, getterName) {
+    if (!bridge || typeof bridge[getterName] !== "function") {
+      return Promise.resolve();
+    }
+
+    const currentValue = bridge[getterName]();
+    if (!currentValue || typeof currentValue !== "object" || Array.isArray(currentValue)) {
+      return Promise.resolve();
+    }
+
+    if (!Object.keys(currentValue).length) {
+      return Promise.resolve();
+    }
+
+    return state.db.ref(path).set(currentValue);
+  }
+
+  function subscribeObjectCollection(path, getterName, setterName) {
+    if (!bridge || typeof bridge[setterName] !== "function") {
+      return null;
+    }
+
+    const refInstance = state.db.ref(path);
+    refInstance.on("value", async (snapshot) => {
+      const value = snapshot.val();
+      const isObjectValue = value && typeof value === "object" && !Array.isArray(value);
+
+      if (!isObjectValue || !Object.keys(value).length) {
+        await seedObjectCollection(path, getterName);
+        return;
+      }
+
+      bridge[setterName](value);
+    });
+
+    return refInstance;
+  }
+
   function attachDataSubscriptions() {
     unsubscribeDataRefs();
 
@@ -684,6 +737,11 @@
     state.projectsRef = subscribeDataCollection("projects", "getProjects", "setProjects");
     state.milestonesRef = subscribeDataCollection("milestones", "getMilestones", "setMilestones");
     state.qualificationsRef = subscribeDataCollection("qualifications", "getQualifications", "setQualifications");
+    state.educationSchedulesRef = subscribeDataCollection("educationSchedules", "getEducationSchedules", "setEducationSchedules");
+    state.educationEnrollmentsRef = subscribeDataCollection("educationEnrollments", "getEducationEnrollments", "setEducationEnrollments");
+    state.educationCostDetailsRef = subscribeObjectCollection("educationCostDetails", "getEducationCostDetails", "setEducationCostDetails");
+    state.surveyFormsRef = subscribeDataCollection("surveyForms", "getSurveyForms", "setSurveyForms");
+    state.surveyResponsesRef = subscribeDataCollection("surveyResponses", "getSurveyResponses", "setSurveyResponses");
   }
 
   function attachUsersSubscription() {
@@ -739,6 +797,21 @@
         return Promise.resolve(false);
       },
       saveQualifications() {
+        return Promise.resolve(false);
+      },
+      saveEducationSchedules() {
+        return Promise.resolve(false);
+      },
+      saveEducationEnrollments() {
+        return Promise.resolve(false);
+      },
+      saveEducationCostDetails() {
+        return Promise.resolve(false);
+      },
+      saveSurveyForms() {
+        return Promise.resolve(false);
+      },
+      saveSurveyResponses() {
         return Promise.resolve(false);
       },
       getCurrentUserProfile() {
@@ -1045,6 +1118,42 @@
           }
 
           return state.db.ref("qualifications").set(listToMap(list)).then(() => true);
+        },
+        saveEducationSchedules(list) {
+          if (!state.db || !hasDataAccess()) {
+            return Promise.resolve(false);
+          }
+
+          return state.db.ref("educationSchedules").set(listToMap(list)).then(() => true);
+        },
+        saveEducationEnrollments(list) {
+          if (!state.db || !hasDataAccess()) {
+            return Promise.resolve(false);
+          }
+
+          return state.db.ref("educationEnrollments").set(listToMap(list)).then(() => true);
+        },
+        saveEducationCostDetails(value) {
+          if (!state.db || !hasDataAccess()) {
+            return Promise.resolve(false);
+          }
+
+          const nextValue = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+          return state.db.ref("educationCostDetails").set(nextValue).then(() => true);
+        },
+        saveSurveyForms(list) {
+          if (!state.db || !hasDataAccess()) {
+            return Promise.resolve(false);
+          }
+
+          return state.db.ref("surveyForms").set(listToMap(list)).then(() => true);
+        },
+        saveSurveyResponses(list) {
+          if (!state.db || !hasDataAccess()) {
+            return Promise.resolve(false);
+          }
+
+          return state.db.ref("surveyResponses").set(listToMap(list)).then(() => true);
         },
         getCurrentUserProfile() {
           return state.currentUserProfile;
