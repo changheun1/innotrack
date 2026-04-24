@@ -138,6 +138,7 @@
     firebaseReady: false,
     currentUser: null,
     currentUserProfile: null,
+    pendingSignupProfile: null,
     projectsRef: null,
     milestonesRef: null,
     qualificationsRef: null,
@@ -678,11 +679,7 @@
     }
 
     try {
-      await state.db.ref(`users/${uid}`).update({
-        deletedAt: Date.now(),
-        deletedBy: state.currentUser?.uid || "",
-        updatedAt: Date.now(),
-      });
+      await state.db.ref(`users/${uid}`).remove();
 
       if (uid === state.currentUser?.uid) {
         state.currentUserProfile = null;
@@ -827,11 +824,19 @@
       error.code = DELETED_ACCOUNT_ERROR;
       throw error;
     }
+    const seedName = String(seedProfile?.name || "").trim();
+    const existingName = String(existingProfile?.name || "").trim();
+    const seedCompany = String(seedProfile?.company || "").trim();
+    const existingCompany = String(existingProfile?.company || "").trim();
+    const seedDepartment = String(seedProfile?.department || "").trim();
+    const existingDepartment = String(existingProfile?.department || "").trim();
+
     const baseProfile = {
       uid: authUser.uid,
-      name: existingProfile?.name || seedProfile?.name || authUser.displayName || authUser.email?.split("@")[0] || "???",
-      company: existingProfile?.company || seedProfile?.company || "",
-      department: existingProfile?.department || seedProfile?.department || "",
+      // Prefer explicit signup input when provided to avoid email-prefix fallback winning race conditions.
+      name: seedName || existingName || authUser.displayName || authUser.email?.split("@")[0] || "???",
+      company: seedCompany || existingCompany || "",
+      department: seedDepartment || existingDepartment || "",
       email: authUser.email || existingProfile?.email || "",
       role: existingProfile?.role || seedProfile?.role || DEFAULT_ROLE,
       createdAt: existingProfile?.createdAt || seedProfile?.createdAt || Date.now(),
@@ -890,6 +895,7 @@
     }
 
     const formData = new FormData(elements.signupForm);
+    const email = String(formData.get("email") || "").trim();
     const password = String(formData.get("password") || "");
     const passwordConfirm = String(formData.get("passwordConfirm") || "");
 
@@ -899,23 +905,48 @@
     }
 
     try {
-      const credential = await state.auth.createUserWithEmailAndPassword(
-        String(formData.get("email") || "").trim(),
-        password
-      );
-
-      await ensureUserProfile(credential.user, {
+      const createdAt = Date.now();
+      const pendingProfile = {
         name: String(formData.get("name") || "").trim(),
         company: String(formData.get("company") || "").trim(),
         department: String(formData.get("department") || "").trim(),
         role: DEFAULT_ROLE,
-        createdAt: Date.now(),
-      });
+        createdAt,
+        email,
+      };
+      state.pendingSignupProfile = pendingProfile;
+
+      const credential = await state.auth.createUserWithEmailAndPassword(
+        email,
+        password
+      );
+
+      const ensuredName = pendingProfile.name || credential.user.email?.split("@")[0] || "???";
+      const ensuredCompany = pendingProfile.company || "";
+      const ensuredDepartment = pendingProfile.department || "";
+      const nextProfile = {
+        uid: credential.user.uid,
+        name: ensuredName,
+        company: ensuredCompany,
+        department: ensuredDepartment,
+        email: credential.user.email || pendingProfile.email,
+        role: DEFAULT_ROLE,
+        createdAt,
+        updatedAt: Date.now(),
+        lastLoginAt: Date.now(),
+      };
+
+      // Force a deterministic profile write at signup time.
+      await state.db.ref(`users/${credential.user.uid}`).set(nextProfile);
+      state.currentUserProfile = nextProfile;
+
+      state.pendingSignupProfile = null;
 
       elements.signupForm.reset();
       closeModal(elements.signupModal);
       window.alert(TEXT.signupDone);
     } catch (error) {
+      state.pendingSignupProfile = null;
       window.alert(`${TEXT.signupFail}\n${error?.message || ""}`.trim());
     }
   }
@@ -1202,7 +1233,17 @@
     }
 
     try {
-      state.currentUserProfile = await ensureUserProfile(user);
+      const pendingProfile = (
+        state.pendingSignupProfile
+        && String(state.pendingSignupProfile.email || "").toLowerCase() === String(user.email || "").toLowerCase()
+      )
+        ? state.pendingSignupProfile
+        : null;
+
+      state.currentUserProfile = await ensureUserProfile(user, pendingProfile || undefined);
+      if (pendingProfile) {
+        state.pendingSignupProfile = null;
+      }
       updateAuthUi();
       attachDataSubscriptions();
       attachUsersSubscription();
