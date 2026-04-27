@@ -1002,6 +1002,7 @@ const state = {
   health: "all",
   taskPage: 1,
   selectedId: projects[0]?.id ?? null,
+  selectedTaskIds: [],
   qualificationSearch: "",
   qualificationYear: String(REFERENCE_DATE.getFullYear()),
   qualificationType: "all",
@@ -2467,9 +2468,20 @@ function buildWeeklyInsight(filteredProjects) {
   const delayedCount = behindExpected.length;
   const lowestCompanyName = lowestCompany ? escapeHtml(lowestCompany.company) : "집계 대상 법인";
   const lowestCompanyProgress = lowestCompany?.progress ?? 0;
+  const hasCompanyTie = companySummary.length > 1
+    && companySummary.every((company) => company.progress === companySummary[0].progress);
+  const lowestProgressCompanies = companySummary
+    .filter((company) => company.progress === lowestCompanyProgress)
+    .map((company) => escapeHtml(company.company));
 
   let actionCopy = "전체 과제 기준 지연 과제와 법인별 진행률을 함께 점검해 주세요.";
   let summaryHtml = `총 <span class="hero-summary-count">${totalCount}건</span>의 과제 중 <span class="hero-summary-count">${delayedCount}건</span>이 지연되고 있으므로 만회계획이 필요하며, <span class="hero-summary-target">${lowestCompanyName}</span>의 진행률이 <span class="hero-summary-count">${lowestCompanyProgress}%</span>로 가장 낮으므로 조치가 필요합니다.`;
+
+  if (hasCompanyTie) {
+    summaryHtml = `총 <span class="hero-summary-count">${totalCount}건</span>의 과제 중 <span class="hero-summary-count">${delayedCount}건</span>이 지연되고 있으므로 만회계획이 필요하며, 법인별 평균 진행률이 모두 <span class="hero-summary-count">${lowestCompanyProgress}%</span>로 동일해 전사 공통 개선이 필요합니다.`;
+  } else if (lowestProgressCompanies.length > 1) {
+    summaryHtml = `총 <span class="hero-summary-count">${totalCount}건</span>의 과제 중 <span class="hero-summary-count">${delayedCount}건</span>이 지연되고 있으므로 만회계획이 필요하며, <span class="hero-summary-target">${lowestProgressCompanies.join(", ")}</span>의 진행률이 <span class="hero-summary-count">${lowestCompanyProgress}%</span>로 최저 동률이어서 우선 점검이 필요합니다.`;
+  }
 
   if (!totalCount) {
     actionCopy = "표시할 과제가 없습니다.";
@@ -2560,6 +2572,8 @@ function normalizeProject(project, fallbackId = "") {
     risk: String(project.risk || "").trim(),
     evidence: String(project.evidence || "").trim(),
     note: String(project.note || "").trim(),
+    createdByUid: String(project.createdByUid || "").trim(),
+    createdByName: String(project.createdByName || "").trim(),
   };
 }
 
@@ -3158,9 +3172,23 @@ function saveCertificationExams() {
   }
 
   try {
-    window.innotrackFirebase?.saveCertificationExams?.(certificationExams);
+    const saveResult = window.innotrackFirebase?.saveCertificationExams?.(certificationExams);
+    if (saveResult && typeof saveResult.then === "function") {
+      saveResult
+        .then((synced) => {
+          if (!synced) {
+            window.alert("클라우드 저장에 실패했습니다. 현재 계정 권한(user/admin)과 로그인 상태를 확인해 주세요.");
+          }
+        })
+        .catch((error) => {
+          const message = error?.message || "";
+          window.alert(`클라우드 저장 중 오류가 발생했습니다.\n${message}`.trim());
+        });
+    } else if (saveResult === false) {
+      window.alert("클라우드 저장에 실패했습니다. 현재 계정 권한(user/admin)과 로그인 상태를 확인해 주세요.");
+    }
   } catch (error) {
-    // ignore remote sync failures and keep local persistence
+    window.alert(`클라우드 저장 중 오류가 발생했습니다.\n${error?.message || ""}`.trim());
   }
 }
 
@@ -3172,9 +3200,23 @@ function saveCertificationExamApplications() {
   }
 
   try {
-    window.innotrackFirebase?.saveCertificationExamApplications?.(certificationExamApplications);
+    const saveResult = window.innotrackFirebase?.saveCertificationExamApplications?.(certificationExamApplications);
+    if (saveResult && typeof saveResult.then === "function") {
+      saveResult
+        .then((synced) => {
+          if (!synced) {
+            window.alert("클라우드 저장에 실패했습니다. 현재 계정 권한(user/admin)과 로그인 상태를 확인해 주세요.");
+          }
+        })
+        .catch((error) => {
+          const message = error?.message || "";
+          window.alert(`클라우드 저장 중 오류가 발생했습니다.\n${message}`.trim());
+        });
+    } else if (saveResult === false) {
+      window.alert("클라우드 저장에 실패했습니다. 현재 계정 권한(user/admin)과 로그인 상태를 확인해 주세요.");
+    }
   } catch (error) {
-    // ignore remote sync failures and keep local persistence
+    window.alert(`클라우드 저장 중 오류가 발생했습니다.\n${error?.message || ""}`.trim());
   }
 }
 
@@ -3339,6 +3381,7 @@ function persistSurveyResponsesLocally() {
 function replaceProjectsFromExternal(list = []) {
   const sourceList = Array.isArray(list) ? list : [];
   projects = sourceList.map((project, index) => normalizeProject(project, `IN-26-${String(index + 1).padStart(3, "0")}`));
+  pruneSelectedTaskIds();
   state.selectedId = projects.find((project) => project.id === state.selectedId)?.id ?? projects[0]?.id ?? null;
   persistProjectsLocally();
   render();
@@ -3530,6 +3573,10 @@ function getSelectedQualificationIds() {
   return Array.isArray(state.selectedQualificationIds) ? state.selectedQualificationIds : [];
 }
 
+function getSelectedTaskIds() {
+  return Array.isArray(state.selectedTaskIds) ? state.selectedTaskIds : [];
+}
+
 function getSelectedEducationAdminIds() {
   return Array.isArray(state.selectedEducationAdminIds) ? state.selectedEducationAdminIds : [];
 }
@@ -3542,6 +3589,12 @@ function pruneSelectedQualificationIds() {
   const validIdSet = new Set(qualifications.map((qualification) => qualification.id));
   state.selectedQualificationIds = getSelectedQualificationIds()
     .filter((qualificationId) => validIdSet.has(qualificationId));
+}
+
+function pruneSelectedTaskIds() {
+  const validIdSet = new Set(projects.map((project) => project.id));
+  state.selectedTaskIds = getSelectedTaskIds()
+    .filter((projectId) => validIdSet.has(projectId));
 }
 
 function pruneSelectedCertificationExamIds() {
@@ -3558,6 +3611,10 @@ function pruneSelectedEducationAdminIds() {
 
 function hasCheckedQualification(qualificationId) {
   return getSelectedQualificationIds().includes(qualificationId);
+}
+
+function hasCheckedTask(projectId) {
+  return getSelectedTaskIds().includes(projectId);
 }
 
 function hasCheckedCertificationExam(examId) {
@@ -3590,6 +3647,17 @@ function toggleCheckedQualification(qualificationId) {
   }
 
   state.selectedQualificationIds = [...currentIds, qualificationId];
+}
+
+function toggleCheckedTask(projectId) {
+  const currentIds = getSelectedTaskIds();
+
+  if (currentIds.includes(projectId)) {
+    state.selectedTaskIds = currentIds.filter((id) => id !== projectId);
+    return;
+  }
+
+  state.selectedTaskIds = [...currentIds, projectId];
 }
 
 function toggleCheckedCertificationExam(examId) {
@@ -4186,14 +4254,30 @@ function getEducationCurrentIdentity() {
   };
 }
 
+function normalizeAppRole(value) {
+  const role = String(value || "").trim().toLowerCase();
+  if (role === "admin") {
+    return "super_admin";
+  }
+  return role;
+}
+
 function hasEducationApplyAccess() {
   const identity = getEducationCurrentIdentity();
-  return identity.role === "user" || identity.role === "admin";
+  const role = normalizeAppRole(identity.role);
+  return role === "user" || role === "innovation_manager" || role === "education_manager" || role === "super_admin";
 }
 
 function hasEducationAdminAccess() {
   const identity = getEducationCurrentIdentity();
-  return identity.role === "admin";
+  const role = normalizeAppRole(identity.role);
+  return role === "education_manager" || role === "super_admin";
+}
+
+function hasSystemAdminAccess() {
+  const identity = getEducationCurrentIdentity();
+  const role = normalizeAppRole(identity.role);
+  return role === "super_admin";
 }
 
 function getEducationMonthCursorDate() {
@@ -4661,7 +4745,7 @@ function setActivePage(page) {
     window.alert("교육관리/자격검정관리/설문관리 페이지는 관리자 권한이 필요합니다.");
     nextPage = "innovation";
   }
-  if (nextPage === "admin" && !hasEducationAdminAccess()) {
+  if (nextPage === "admin" && !hasSystemAdminAccess()) {
     window.alert("관리자 전용 페이지는 관리자 권한이 필요합니다.");
     nextPage = "innovation";
   }
@@ -4713,16 +4797,21 @@ function setActivePage(page) {
 }
 
 function syncEducationAdminMenuVisibility() {
-  const canAccess = hasEducationAdminAccess();
-  const adminMenuTargets = ["education-admin", "certification-management", "survey-management", "admin"];
-  adminMenuTargets.forEach((target) => {
+  const canAccessEducationAdmin = hasEducationAdminAccess();
+  const canAccessSystemAdmin = hasSystemAdminAccess();
+  const educationAdminMenuTargets = ["education-admin", "certification-management", "survey-management"];
+  educationAdminMenuTargets.forEach((target) => {
     const menuButton = elements.navItems.find((button) => button.dataset.pageTarget === target);
     if (menuButton) {
-      menuButton.hidden = !canAccess;
+      menuButton.hidden = !canAccessEducationAdmin;
     }
   });
+  const systemAdminButton = elements.navItems.find((button) => button.dataset.pageTarget === "admin");
+  if (systemAdminButton) {
+    systemAdminButton.hidden = !canAccessSystemAdmin;
+  }
 
-  if (!canAccess && adminMenuTargets.includes(state.activePage)) {
+  if ((!canAccessEducationAdmin && educationAdminMenuTargets.includes(state.activePage)) || (!canAccessSystemAdmin && state.activePage === "admin")) {
     setActivePage("innovation");
   }
 }
@@ -5266,6 +5355,8 @@ function renderCertificationExamTable() {
     return;
   }
 
+  pruneSelectedCertificationExamIds();
+
   if (!certificationExams.length) {
     elements.certificationExamTableBody.innerHTML = `
       <tr>
@@ -5465,27 +5556,36 @@ function renderCertificationApplicantTable() {
 }
 
 function getFilteredQualifications() {
-  return qualifications.filter((qualification) => {
-    const matchesQuery = [
-      qualification.qualificationType,
-      qualification.grade,
-      qualification.certificateNo,
-      qualification.company,
-      qualification.department,
-      qualification.name,
-    ]
-      .join(" ")
-      .toLowerCase()
-      .includes(state.qualificationSearch.toLowerCase());
+  return qualifications
+    .filter((qualification) => {
+      const matchesQuery = [
+        qualification.qualificationType,
+        qualification.grade,
+        qualification.certificateNo,
+        qualification.company,
+        qualification.department,
+        qualification.name,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(state.qualificationSearch.toLowerCase());
 
-    const matchesType = state.qualificationType === "all" || qualification.qualificationType === state.qualificationType;
-    const matchesGrade = state.qualificationGrade === "all" || qualification.grade === state.qualificationGrade;
-    const matchesCompany = state.qualificationCompany === "all" || qualification.company === state.qualificationCompany;
-    const qualificationYear = String(qualification.acquiredDate || "").slice(0, 4);
-    const matchesYear = state.qualificationYear === "all" || qualificationYear === state.qualificationYear;
+      const matchesType = state.qualificationType === "all" || qualification.qualificationType === state.qualificationType;
+      const matchesGrade = state.qualificationGrade === "all" || qualification.grade === state.qualificationGrade;
+      const matchesCompany = state.qualificationCompany === "all" || qualification.company === state.qualificationCompany;
+      const qualificationYear = String(qualification.acquiredDate || "").slice(0, 4);
+      const matchesYear = state.qualificationYear === "all" || qualificationYear === state.qualificationYear;
 
-    return matchesQuery && matchesType && matchesGrade && matchesCompany && matchesYear;
-  });
+      return matchesQuery && matchesType && matchesGrade && matchesCompany && matchesYear;
+    })
+    .sort((left, right) => {
+      const leftDate = String(left.acquiredDate || "");
+      const rightDate = String(right.acquiredDate || "");
+      if (leftDate !== rightDate) {
+        return rightDate.localeCompare(leftDate);
+      }
+      return String(left.name || "").localeCompare(String(right.name || ""), "ko-KR");
+    });
 }
 
 function getQualificationTablePageInfo(filteredQualifications) {
@@ -8001,12 +8101,20 @@ function renderTable(filteredProjects) {
   elements.taskTableBody.innerHTML = pagedProjects
     .map((project, index) => {
       const isSelected = project.id === state.selectedId;
+      const isChecked = hasCheckedTask(project.id);
       const alignmentGrade = getAssessmentGrade(project.alignment);
 
       return `
         <tr class="task-row ${isSelected ? "is-selected" : ""} fade-up" data-id="${project.id}" style="animation-delay:${index * 40}ms">
           <td class="selection-cell">
-            <span class="selection-box ${isSelected ? "is-selected" : ""}" aria-hidden="true"></span>
+            <span
+              class="selection-box ${isChecked ? "is-selected" : ""}"
+              data-task-select="${project.id}"
+              role="button"
+              tabindex="0"
+              aria-pressed="${isChecked ? "true" : "false"}"
+              aria-label="${escapeHtml(`${project.name || "-"} 선택`)}"
+            ></span>
           </td>
           <td class="status-cell"><span class="health-pill ${project.scheduleStatus}">${project.scheduleStatusLabel}</span></td>
           <td>
@@ -8311,6 +8419,10 @@ function openProjectModal(mode, projectId = null) {
   if (mode === "edit" && projectId) {
     const project = getProjectById(projectId);
     if (!project) {
+      return;
+    }
+    if (!canEditOrDeleteTaskProject(project)) {
+      window.alert("다른 담당자가 등록한 과제는 수정할 수 없습니다.");
       return;
     }
 
@@ -8706,9 +8818,18 @@ function upsertProject(projectData) {
   const previousProject = state.modalMode === "edit" && state.editingId
     ? getProjectById(state.editingId)
     : null;
+  if (state.modalMode === "edit" && previousProject && !canEditOrDeleteTaskProject(previousProject)) {
+    window.alert("다른 담당자가 등록한 과제는 수정할 수 없습니다.");
+    return;
+  }
+  const currentProfile = window.innotrackFirebase?.getCurrentUserProfile?.() || null;
+  const currentUid = String(currentProfile?.uid || "").trim();
+  const currentName = String(currentProfile?.name || "").trim();
   const normalized = normalizeProject({
     ...previousProject,
     ...projectData,
+    createdByUid: previousProject?.createdByUid || currentUid,
+    createdByName: previousProject?.createdByName || currentName,
     lastUpdated: toIsoDate(REFERENCE_DATE),
   });
 
@@ -8730,31 +8851,54 @@ function upsertProject(projectData) {
   render();
 }
 
-function deleteProject(projectId) {
-  const project = getProjectById(projectId);
-
-  if (!project) {
+function deleteProjects(projectIds = []) {
+  const uniqueIds = [...new Set((Array.isArray(projectIds) ? projectIds : []).filter(Boolean))];
+  if (!uniqueIds.length) {
     return;
   }
 
-  const shouldDelete = window.confirm(`"${project.name}" 과제를 삭제할까요?\n삭제 후에는 현재 브라우저에서만 복구가 가능합니다.`);
+  const deletableProjects = uniqueIds
+    .map((projectId) => getProjectById(projectId))
+    .filter((project) => project && canEditOrDeleteTaskProject(project));
+  const blockedCount = uniqueIds.length - deletableProjects.length;
+
+  if (!deletableProjects.length) {
+    if (blockedCount > 0) {
+      window.alert("선택한 과제 중 삭제 권한이 있는 항목이 없습니다.");
+    }
+    return;
+  }
+
+  const shouldDelete = deletableProjects.length === 1
+    ? window.confirm(`"${deletableProjects[0].name}" 과제를 삭제할까요?\n삭제 후에는 현재 브라우저에서만 복구가 가능합니다.`)
+    : window.confirm(`선택한 ${deletableProjects.length}건 과제를 삭제할까요?\n삭제 후에는 현재 브라우저에서만 복구가 가능합니다.`);
 
   if (!shouldDelete) {
     return;
   }
 
-  projects = projects.filter((item) => item.id !== projectId);
+  const deleteIdSet = new Set(deletableProjects.map((project) => project.id));
+  projects = projects.filter((item) => !deleteIdSet.has(item.id));
   saveProjects();
+  state.selectedTaskIds = getSelectedTaskIds().filter((id) => !deleteIdSet.has(id));
 
-  if (state.selectedId === projectId) {
+  if (deleteIdSet.has(state.selectedId)) {
     state.selectedId = projects[0]?.id ?? null;
   }
 
-  if (state.editingId === projectId || !projects.length) {
+  if (!projects.length || (state.editingId && deleteIdSet.has(state.editingId))) {
     closeProjectModal();
   }
 
+  if (blockedCount > 0) {
+    window.alert(`삭제 권한이 없는 ${blockedCount}건은 제외하고 삭제했습니다.`);
+  }
+
   render();
+}
+
+function deleteProject(projectId) {
+  deleteProjects([projectId]);
 }
 
 function scrollSelectedTaskDetailIntoView() {
@@ -8773,21 +8917,52 @@ function scrollSelectedTaskDetailIntoView() {
 
 function hasTaskManagementAccess() {
   const profile = window.innotrackFirebase?.getCurrentUserProfile?.();
-  const role = String(profile?.role || "").toLowerCase();
-  return role === "user" || role === "admin";
+  const role = normalizeAppRole(profile?.role);
+  return role === "user" || role === "innovation_manager" || role === "super_admin";
+}
+
+function hasTaskGlobalManagementAccess() {
+  const profile = window.innotrackFirebase?.getCurrentUserProfile?.();
+  const role = normalizeAppRole(profile?.role);
+  return role === "innovation_manager" || role === "super_admin";
+}
+
+function isTaskOwner(project) {
+  const profile = window.innotrackFirebase?.getCurrentUserProfile?.();
+  const role = normalizeAppRole(profile?.role);
+  if (!project || !profile || role !== "user") {
+    return false;
+  }
+
+  const currentUid = String(profile.uid || "").trim();
+  const currentName = String(profile.name || "").trim();
+  const ownerUid = String(project.createdByUid || "").trim();
+  const ownerName = String(project.createdByName || "").trim();
+  const projectLeader = String(project.leader || "").trim();
+
+  if (currentUid && ownerUid) {
+    return currentUid === ownerUid;
+  }
+
+  // Legacy records may not have owner uid yet. Fall back to name-based check.
+  return Boolean(currentName) && (currentName === ownerName || currentName === projectLeader);
+}
+
+function canEditOrDeleteTaskProject(project) {
+  return hasTaskGlobalManagementAccess() || isTaskOwner(project);
 }
 
 function hasQualificationManagementAccess() {
   const profile = window.innotrackFirebase?.getCurrentUserProfile?.();
-  const role = String(profile?.role || "").toLowerCase();
-  return role === "admin";
+  const role = normalizeAppRole(profile?.role);
+  return role === "education_manager" || role === "super_admin";
 }
 
 function syncTaskActionButtons(filteredProjects) {
   const canManageTasks = hasTaskManagementAccess();
-  const hasSelectedProject = Boolean(
-    filteredProjects.length && filteredProjects.some((project) => project.id === state.selectedId),
-  );
+  const selectedProject = filteredProjects.find((project) => project.id === state.selectedId) || getProjectById(state.selectedId);
+  const hasSelectedProject = Boolean(selectedProject);
+  const canEditSelectedProject = hasSelectedProject && canEditOrDeleteTaskProject(selectedProject);
 
   if (elements.taskDetailButton) {
     elements.taskDetailButton.hidden = true;
@@ -8800,52 +8975,56 @@ function syncTaskActionButtons(filteredProjects) {
 
   if (elements.taskEditButton) {
     elements.taskEditButton.hidden = !canManageTasks;
-    elements.taskEditButton.disabled = !canManageTasks || !hasSelectedProject;
+    elements.taskEditButton.disabled = !canManageTasks || !hasSelectedProject || !canEditSelectedProject;
   }
 
   if (elements.taskDeleteButton) {
     elements.taskDeleteButton.hidden = !canManageTasks;
-    elements.taskDeleteButton.disabled = !canManageTasks || !hasSelectedProject;
+    elements.taskDeleteButton.disabled = !canManageTasks || !hasSelectedProject || !canEditSelectedProject;
   }
+}
+
+function refreshTaskSelectionUi(filteredProjects = getFilteredProjects()) {
+  elements.taskTableBody?.querySelectorAll(".task-row").forEach((row) => {
+    const projectId = row.getAttribute("data-id") || "";
+    const isSelected = projectId === state.selectedId;
+    row.classList.toggle("is-selected", isSelected);
+
+    const selectionNode = row.querySelector("[data-task-select]");
+    if (selectionNode) {
+      const isChecked = hasCheckedTask(projectId);
+      selectionNode.classList.toggle("is-selected", isChecked);
+      selectionNode.setAttribute("aria-pressed", isChecked ? "true" : "false");
+    }
+  });
+
+  renderDetailCard(filteredProjects);
+  syncTaskActionButtons(filteredProjects);
+  attachDetailEvents();
 }
 
 function attachTableEvents() {
   elements.taskTableBody.querySelectorAll(".task-row").forEach((row) => {
     row.addEventListener("click", (event) => {
-      const interactiveTarget = event.target.closest("button");
+      const interactiveTarget = event.target.closest("[data-task-select], button");
       if (interactiveTarget) {
         return;
       }
 
       state.selectedId = row.dataset.id;
-      render();
-    });
-  });
-}
-
-function attachQualificationTableEvents() {
-  elements.qualificationTableBody?.querySelectorAll(".qualification-row").forEach((row) => {
-    row.addEventListener("click", (event) => {
-      const interactiveTarget = event.target.closest("[data-qualification-select]");
-      if (interactiveTarget) {
-        return;
-      }
-
-      state.selectedQualificationId = row.dataset.qualificationId;
-      render();
+      refreshTaskSelectionUi();
     });
   });
 
-  elements.qualificationTableBody?.querySelectorAll("[data-qualification-select]").forEach((selectionNode) => {
+  elements.taskTableBody.querySelectorAll("[data-task-select]").forEach((selectionNode) => {
     const toggleSelection = () => {
-      const qualificationId = selectionNode.getAttribute("data-qualification-select");
-      if (!qualificationId) {
+      const projectId = selectionNode.getAttribute("data-task-select");
+      if (!projectId) {
         return;
       }
-
-      state.selectedQualificationId = qualificationId;
-      toggleCheckedQualification(qualificationId);
-      render();
+      state.selectedId = projectId;
+      toggleCheckedTask(projectId);
+      refreshTaskSelectionUi();
     };
 
     selectionNode.addEventListener("click", (event) => {
@@ -8860,6 +9039,62 @@ function attachQualificationTableEvents() {
       }
     });
   });
+}
+
+function attachQualificationTableEvents() {
+  elements.qualificationTableBody?.querySelectorAll(".qualification-row").forEach((row) => {
+    row.addEventListener("click", (event) => {
+      const interactiveTarget = event.target.closest("[data-qualification-select]");
+      if (interactiveTarget) {
+        return;
+      }
+
+      state.selectedQualificationId = row.dataset.qualificationId;
+      refreshQualificationSelectionUi();
+    });
+  });
+
+  elements.qualificationTableBody?.querySelectorAll("[data-qualification-select]").forEach((selectionNode) => {
+    const toggleSelection = () => {
+      const qualificationId = selectionNode.getAttribute("data-qualification-select");
+      if (!qualificationId) {
+        return;
+      }
+
+      state.selectedQualificationId = qualificationId;
+      toggleCheckedQualification(qualificationId);
+      refreshQualificationSelectionUi();
+    };
+
+    selectionNode.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleSelection();
+    });
+    selectionNode.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleSelection();
+      }
+    });
+  });
+}
+
+function refreshQualificationSelectionUi(filteredQualifications = getFilteredQualifications()) {
+  elements.qualificationTableBody?.querySelectorAll(".qualification-row").forEach((row) => {
+    const qualificationId = row.getAttribute("data-qualification-id") || "";
+    const isSelected = qualificationId === state.selectedQualificationId;
+    row.classList.toggle("is-selected", isSelected);
+
+    const selectionNode = row.querySelector("[data-qualification-select]");
+    if (selectionNode) {
+      const isChecked = hasCheckedQualification(qualificationId);
+      selectionNode.classList.toggle("is-selected", isChecked);
+      selectionNode.setAttribute("aria-pressed", isChecked ? "true" : "false");
+    }
+  });
+
+  syncQualificationActionButtons(filteredQualifications);
 }
 
 function attachCertificationExamTableEvents() {
@@ -9721,12 +9956,16 @@ function bindEvents() {
   });
 
   elements.taskDeleteButton?.addEventListener("click", () => {
-    const project = getProjectById(state.selectedId);
-
-    if (!project) {
+    const checkedIds = getSelectedTaskIds();
+    if (checkedIds.length) {
+      deleteProjects(checkedIds);
       return;
     }
 
+    const project = getProjectById(state.selectedId);
+    if (!project) {
+      return;
+    }
     deleteProject(project.id);
   });
 
@@ -9970,7 +10209,8 @@ function bindEvents() {
     if (!hasQualificationManagementAccess()) {
       return;
     }
-    const checkedIds = getSelectedCertificationExamIds();
+    const checkedIds = getSelectedCertificationExamIds()
+      .filter((examId) => Boolean(getCertificationExamById(examId)));
     if (checkedIds.length) {
       deleteCertificationExams(checkedIds);
       return;

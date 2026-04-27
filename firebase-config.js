@@ -11,6 +11,6 @@ window.INNOTRACK_FIREBASE_CONFIG = {
 
 window.INNOTRACK_FIREBASE_OPTIONS = {
   signupDefaultRole: "guest",
-  readableRoles: ["user", "admin"],
-  manageableRoles: ["guest", "user", "admin"],
+  readableRoles: ["user", "innovation_manager", "education_manager", "super_admin"],
+  manageableRoles: ["guest", "user", "innovation_manager", "education_manager", "super_admin"],
 };

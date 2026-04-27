@@ -5,12 +5,19 @@
   const firebaseGlobal = window.firebase;
 
   const DEFAULT_ROLE = String(firebaseOptions.signupDefaultRole || "guest").toLowerCase();
+  const ROLE_SUPER_ADMIN = "super_admin";
+  const ROLE_INNOVATION_MANAGER = "innovation_manager";
+  const ROLE_EDUCATION_MANAGER = "education_manager";
+  const ROLE_USER = "user";
+  const ROLE_GUEST = "guest";
+  const LEGACY_ROLE_ADMIN = "admin";
   const READABLE_ROLES = Array.isArray(firebaseOptions.readableRoles) && firebaseOptions.readableRoles.length
     ? firebaseOptions.readableRoles.map((role) => String(role).toLowerCase())
-    : ["user", "admin"];
+    : [ROLE_USER, ROLE_INNOVATION_MANAGER, ROLE_EDUCATION_MANAGER, ROLE_SUPER_ADMIN];
   const MANAGEABLE_ROLES = Array.isArray(firebaseOptions.manageableRoles) && firebaseOptions.manageableRoles.length
     ? firebaseOptions.manageableRoles.map((role) => String(role).toLowerCase())
-    : ["guest", "user", "admin"];
+    : [ROLE_GUEST, ROLE_USER, ROLE_INNOVATION_MANAGER, ROLE_EDUCATION_MANAGER, ROLE_SUPER_ADMIN];
+  const ROLE_ORDER = [ROLE_SUPER_ADMIN, ROLE_INNOVATION_MANAGER, ROLE_EDUCATION_MANAGER, ROLE_USER, ROLE_GUEST];
   const REQUIRED_CONFIG_KEYS = ["apiKey", "authDomain", "projectId", "messagingSenderId", "appId", "databaseURL"];
   const REMEMBERED_LOGIN_EMAIL_KEY = "innotrack.rememberedLoginEmail";
   const TEXT = {
@@ -22,7 +29,7 @@
     loginFail: "로그인에 실패했습니다.",
     profileSelfUpdated: "내 정보가 수정되었습니다.",
     profileSelfUpdateFail: "내 정보 수정 중 오류가 발생했습니다.",
-    profileSelfUserOnly: "일반회원 계정에서만 정보수정을 사용할 수 있습니다.",
+    profileSelfUserOnly: "승인된 계정에서만 정보수정을 사용할 수 있습니다.",
     passwordResetEmailRequired: "비밀번호 재설정 메일을 받을 이메일을 먼저 입력해 주세요.",
     passwordResetSent: "비밀번호 재설정 메일을 발송했습니다. 메일함을 확인해 주세요.",
     passwordResetFail: "비밀번호 재설정 메일 발송에 실패했습니다.",
@@ -271,21 +278,11 @@
   }
 
   function getProfileRoleLabel(profile) {
-    const role = String(profile?.role || "").toLowerCase();
-
-    if (role === "admin") {
-      return "관리자";
+    const role = normalizeRole(profile?.role);
+    if (!role) {
+      return "로그인 전";
     }
-
-    if (role === "user") {
-      return "승인 회원";
-    }
-
-    if (role === "guest") {
-      return "승인 대기";
-    }
-
-    return "로그인 전";
+    return getRoleOptionLabel(role);
   }
 
   function getInitials(profile) {
@@ -318,15 +315,15 @@
   }
 
   function hasDataAccess(profile = state.currentUserProfile) {
-    return READABLE_ROLES.includes(String(profile?.role || "").toLowerCase());
+    return READABLE_ROLES.includes(normalizeRole(profile?.role));
   }
 
   function hasAdminAccess(profile = state.currentUserProfile) {
-    return String(profile?.role || "").toLowerCase() === "admin";
+    return normalizeRole(profile?.role) === ROLE_SUPER_ADMIN;
   }
 
   function hasMemberAccess(profile = state.currentUserProfile) {
-    return String(profile?.role || "").toLowerCase() === "user";
+    return hasDataAccess(profile);
   }
 
   function updateMirrorVisibility(nodes, hidden) {
@@ -500,20 +497,31 @@
 
   function normalizeRole(value) {
     const role = String(value || "").toLowerCase();
+    if (role === LEGACY_ROLE_ADMIN) {
+      return ROLE_SUPER_ADMIN;
+    }
     return MANAGEABLE_ROLES.includes(role) ? role : DEFAULT_ROLE;
   }
 
   function getRoleOptionLabel(role) {
-    if (role === "admin") {
-      return "관리자";
+    if (role === ROLE_SUPER_ADMIN) {
+      return "시스템 관리자";
     }
 
-    if (role === "user") {
-      return "일반회원";
+    if (role === ROLE_INNOVATION_MANAGER) {
+      return "혁신과제 관리자";
     }
 
-    if (role === "guest") {
-      return "승인대기";
+    if (role === ROLE_EDUCATION_MANAGER) {
+      return "교육·자격시험 관리자";
+    }
+
+    if (role === ROLE_USER) {
+      return "일반 사용자";
+    }
+
+    if (role === ROLE_GUEST) {
+      return "게스트(승인대기)";
     }
 
     return role;
@@ -562,8 +570,8 @@
       }))
       .filter((user) => !user.deletedAt)
       .sort((left, right) => {
-        const leftRoleWeight = left.role === "admin" ? 0 : left.role === "user" ? 1 : 2;
-        const rightRoleWeight = right.role === "admin" ? 0 : right.role === "user" ? 1 : 2;
+        const leftRoleWeight = ROLE_ORDER.indexOf(normalizeRole(left.role));
+        const rightRoleWeight = ROLE_ORDER.indexOf(normalizeRole(right.role));
         if (leftRoleWeight !== rightRoleWeight) {
           return leftRoleWeight - rightRoleWeight;
         }
@@ -578,8 +586,8 @@
 
     elements.usersTableBody.innerHTML = users.map((user) => {
       const role = normalizeRole(user.role);
-      const statusClass = role === "guest" ? "is-pending" : "is-active";
-      const statusLabel = role === "guest" ? "승인대기" : "활성";
+      const statusClass = role === ROLE_GUEST ? "is-pending" : "is-active";
+      const statusLabel = role === ROLE_GUEST ? "승인대기" : "활성";
       const roleOptions = renderRoleOptions(role);
       const companyOptions = renderCompanyOptions(user.company);
 
@@ -839,7 +847,7 @@
       company: seedCompany || existingCompany || "",
       department: seedDepartment || existingDepartment || "",
       email: authUser.email || existingProfile?.email || "",
-      role: existingProfile?.role || seedProfile?.role || DEFAULT_ROLE,
+      role: normalizeRole(existingProfile?.role || seedProfile?.role || DEFAULT_ROLE),
       createdAt: existingProfile?.createdAt || seedProfile?.createdAt || Date.now(),
       updatedAt: Date.now(),
       lastLoginAt: Date.now(),
