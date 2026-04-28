@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 80" role="img" aria-labelledby="title">
+  <title>ATEC</title>
+  <rect width="240" height="80" fill="none"/>
+  <text
+    x="0"
+    y="58"
+    fill="#e10f6f"
+    font-family="Segoe UI, Apple SD Gothic Neo, Malgun Gothic, sans-serif"
+    font-size="58"
+    font-weight="800"
+    letter-spacing="-3"
+  >ATEC</text>
+</svg>

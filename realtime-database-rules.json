@@ -1,0 +1,53 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "users": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'super_admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('users').child(auth.uid).child('role').val() === 'super_admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')",
+        ".write": "auth != null && ((auth.uid === $uid && !data.exists() && newData.child('role').val() === 'guest' && newData.child('email').val() === auth.token.email) || (auth.uid === $uid && data.exists() && newData.child('role').val() === data.child('role').val() && newData.child('email').val() === data.child('email').val()) || root.child('users').child(auth.uid).child('role').val() === 'super_admin' || root.child('users').child(auth.uid).child('role').val() === 'admin')"
+      }
+    },
+    "projects": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'innovation_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'innovation_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')"
+    },
+    "milestones": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'innovation_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'innovation_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')"
+    },
+    "qualifications": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')"
+    },
+    "certificationExams": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'innovation_manager' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'innovation_manager' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')"
+    },
+    "certificationExamApplications": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'innovation_manager' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'innovation_manager' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')"
+    },
+    "educationSchedules": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'innovation_manager' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'innovation_manager' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')"
+    },
+    "educationEnrollments": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'innovation_manager' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'innovation_manager' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')"
+    },
+    "educationCostDetails": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')"
+    },
+    "surveyForms": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')"
+    },
+    "surveyResponses": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() === 'user' || root.child('users').child(auth.uid).child('role').val() === 'education_manager' || root.child('users').child(auth.uid).child('role').val() === 'super_admin')"
+    }
+  }
+}
