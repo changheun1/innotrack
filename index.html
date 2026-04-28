@@ -18,7 +18,7 @@
     <aside class="sidebar">
       <div class="brand-card">
         <img class="brand-logo" src="./assets/logo.png" alt="ATEC 로고">
-        <h1 class="brand-title">혁신활동 운영시스템</h1>
+        <h1 class="brand-title">Growth & Learn Management System</h1>
       </div>
 
       <nav class="side-nav" aria-label="주요 메뉴">
@@ -628,8 +628,10 @@
                   <tr>
                     <th scope="col">과정명</th>
                     <th scope="col">수강기간</th>
+                    <th scope="col">교육시간</th>
                     <th scope="col">수료여부</th>
                     <th scope="col">만족도평가</th>
+                    <th scope="col">신청취소</th>
                   </tr>
                 </thead>
                 <tbody id="my-learning-table-body"></tbody>
@@ -1361,9 +1363,14 @@
         <div>
           <p class="panel-kicker">Admin</p>
           <h3 id="users-modal-title">회원관리</h3>
-          <p class="modal-copy">게스트 승인 및 회원등급(시스템/혁신과제/교육·자격시험 관리자, 사용자)과 최근 로그인 이력을 관리합니다.</p>
+          <p class="modal-copy">회원 등급과 로그인 이력을 관리합니다.</p>
         </div>
         <button class="modal-close" type="button" data-auth-close="users-modal" aria-label="회원관리 창 닫기">×</button>
+      </div>
+      <div class="users-toolbar">
+        <button id="users-copy-uid-button" type="button" class="ghost-button">UID 복사</button>
+        <button id="users-save-button" type="button" class="outline-button">저장</button>
+        <button id="users-delete-button" type="button" class="action-button action-button-danger">삭제</button>
       </div>
       <div class="table-wrap users-table-wrap">
         <table>
@@ -1377,7 +1384,7 @@
               <th scope="col">상태</th>
               <th scope="col">가입일</th>
               <th scope="col">최근 로그인</th>
-              <th scope="col">저장</th>
+              <th scope="col">UID</th>
             </tr>
           </thead>
           <tbody id="users-table-body">
@@ -1929,6 +1936,7 @@
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/12.10.0/firebase-functions-compat.js"></script>
   <script src="./firebase-config.js?v=20260424-1"></script>
   <script src="./app.js?v=20260424-1"></script>
   <script src="./firebase-service.js?v=20260424-1"></script>

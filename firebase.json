@@ -31,5 +31,8 @@
   },
   "database": {
     "rules": "realtime-database-rules.json"
+  },
+  "functions": {
+    "source": "functions"
   }
 }

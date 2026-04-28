@@ -1031,6 +1031,7 @@ const state = {
   educationEnrollmentSearch: "",
   selectedEducationEnrollmentIds: [],
   myLearningEvaluationEnrollmentId: null,
+  myLearningUpcomingEnrollmentId: null,
   selectedSurveyFormId: surveyForms[0]?.id ?? null,
   surveyQuestionDraftType: "scale",
   surveyResultMajorFilter: "all",
@@ -2740,6 +2741,7 @@ function normalizeEducationEnrollment(enrollment, fallbackId = "") {
     notebookRequired: String(enrollment.notebookRequired || "").trim(),
     residentRegistrationNo: String(enrollment.residentRegistrationNo || "").trim(),
     appliedAt,
+    waitlisted: Boolean(enrollment.waitlisted),
     completed: Boolean(enrollment.completed),
     satisfaction,
     certificateNo: String(enrollment.certificateNo || "").trim(),
@@ -3739,6 +3741,58 @@ function getEducationEnrollmentCount(scheduleId) {
   return educationEnrollments.filter((enrollment) => enrollment.scheduleId === scheduleId).length;
 }
 
+function getEducationConfirmedEnrollmentCount(scheduleId) {
+  if (!scheduleId) {
+    return 0;
+  }
+  return educationEnrollments.filter((enrollment) => enrollment.scheduleId === scheduleId && !enrollment.waitlisted).length;
+}
+
+function getEducationWaitlistCount(scheduleId) {
+  if (!scheduleId) {
+    return 0;
+  }
+  return educationEnrollments.filter((enrollment) => enrollment.scheduleId === scheduleId && enrollment.waitlisted).length;
+}
+
+function getEducationWaitlistLimit(capacity) {
+  const safeCapacity = Math.max(0, Math.round(parseNumber(capacity, 0)));
+  if (!safeCapacity) {
+    return 0;
+  }
+  return Math.max(1, Math.floor(safeCapacity * 0.2));
+}
+
+function isEducationWaitlistOpen(schedule, referenceDate = REFERENCE_DATE) {
+  const referenceToken = referenceDate instanceof Date
+    ? toIsoDate(referenceDate)
+    : (isValidDateString(referenceDate) ? referenceDate : toIsoDate(REFERENCE_DATE));
+  const applicationStartDate = isValidDateString(schedule?.applicationStartDate)
+    ? schedule.applicationStartDate
+    : (isValidDateString(schedule?.startDate) ? schedule.startDate : referenceToken);
+  const applicationEndSource = isValidDateString(schedule?.applicationEndDate)
+    ? schedule.applicationEndDate
+    : applicationStartDate;
+  const applicationEndDate = parseDate(applicationEndSource) >= parseDate(applicationStartDate)
+    ? applicationEndSource
+    : applicationStartDate;
+  const educationEndDate = isValidDateString(schedule?.endDate)
+    ? schedule.endDate
+    : (isValidDateString(schedule?.startDate) ? schedule.startDate : referenceToken);
+
+  const capacity = Math.max(0, Math.round(parseNumber(schedule?.capacity, 0)));
+  const confirmedEnrollmentCount = getEducationConfirmedEnrollmentCount(schedule?.id);
+  const waitlistCount = getEducationWaitlistCount(schedule?.id);
+  const waitlistLimit = getEducationWaitlistLimit(capacity);
+
+  const isWithinApplicationPeriod = referenceToken >= applicationStartDate && referenceToken <= applicationEndDate;
+  const isBeforeEducationEnd = referenceToken <= educationEndDate;
+  const isCapacityFull = capacity > 0 && confirmedEnrollmentCount >= capacity;
+  const hasWaitlistRoom = waitlistLimit > 0 && waitlistCount < waitlistLimit;
+
+  return isWithinApplicationPeriod && isBeforeEducationEnd && isCapacityFull && hasWaitlistRoom;
+}
+
 function getEducationStatusLabel(status) {
   return educationStatusLabels[status] || educationStatusLabels.planned;
 }
@@ -3753,8 +3807,8 @@ function getEducationRecruitStatusKey(schedule, referenceDate = REFERENCE_DATE) 
   const endSource = isValidDateString(schedule?.applicationEndDate) ? schedule.applicationEndDate : startDate;
   const endDate = parseDate(endSource) >= parseDate(startDate) ? endSource : startDate;
   const capacity = Math.max(0, Math.round(parseNumber(schedule?.capacity, 0)));
-  const enrollmentCount = getEducationEnrollmentCount(schedule?.id);
-  const isCapacityClosed = capacity > 0 && enrollmentCount >= capacity;
+  const confirmedEnrollmentCount = getEducationConfirmedEnrollmentCount(schedule?.id);
+  const isCapacityClosed = capacity > 0 && confirmedEnrollmentCount >= capacity;
 
   if (isCapacityClosed) {
     return "closed";
@@ -3781,7 +3835,7 @@ function getEducationCalendarChipStatus(schedule, referenceDate = REFERENCE_DATE
     : (isValidDateString(schedule?.startDate) ? schedule.startDate : referenceToken);
 
   if (referenceToken > endDate) {
-    return { label: "강의종료", className: "is-ended", icon: "✅" };
+    return { label: "교육종료", className: "is-ended", icon: "▫️" };
   }
 
   const recruitStatus = getEducationRecruitStatusKey(schedule, referenceToken);
@@ -3789,9 +3843,9 @@ function getEducationCalendarChipStatus(schedule, referenceDate = REFERENCE_DATE
     return { label: "접수예정", className: "is-planned", icon: "🕒" };
   }
   if (recruitStatus === "open") {
-    return { label: "접수중", className: "is-open", icon: "🟢" };
+    return { label: "모집중", className: "is-open", icon: "🟢" };
   }
-  return { label: "접수완료", className: "is-done", icon: "🔒" };
+  return { label: "모집마감", className: "is-done", icon: "🔒" };
 }
 
 function getCertificationExamCalendarChipStatus(exam, referenceDate = REFERENCE_DATE) {
@@ -3802,7 +3856,7 @@ function getCertificationExamCalendarChipStatus(exam, referenceDate = REFERENCE_
     ? String(exam.examDateTime).slice(0, 10)
     : referenceToken;
   if (referenceToken > examDateToken) {
-    return { label: "시험종료", className: "is-ended", icon: "✅" };
+    return { label: "시험종료", className: "is-ended", icon: "▫️" };
   }
 
   const startDate = isValidDateString(exam?.applicationStartDate) ? exam.applicationStartDate : examDateToken;
@@ -4551,7 +4605,9 @@ function applyEducationSchedule(scheduleId, applicationDraft = {}) {
 
   const identity = getEducationCurrentIdentity();
   const recruitStatusKey = getEducationRecruitStatusKey(schedule);
-  if (recruitStatusKey !== "open") {
+  const capacity = Math.max(0, Math.round(parseNumber(schedule.capacity, 0)));
+  const canJoinWaitlist = isEducationWaitlistOpen(schedule);
+  if (recruitStatusKey !== "open" && !canJoinWaitlist) {
     window.alert("모집이 마감되었거나 신청 가능 기간이 아닙니다.");
     return;
   }
@@ -4563,6 +4619,7 @@ function applyEducationSchedule(scheduleId, applicationDraft = {}) {
     window.alert("이미 신청한 과정입니다.");
     return;
   }
+  const isWaitlisted = canJoinWaitlist && recruitStatusKey === "closed";
 
   educationEnrollments.unshift(normalizeEducationEnrollment({
     id: generateEducationEnrollmentId(),
@@ -4577,12 +4634,44 @@ function applyEducationSchedule(scheduleId, applicationDraft = {}) {
     notebookRequired: String(applicationDraft.notebookRequired || "").trim(),
     residentRegistrationNo: String(applicationDraft.residentRegistrationNo || "").trim(),
     appliedAt: toIsoDate(REFERENCE_DATE),
+    waitlisted: isWaitlisted,
     completed: false,
     satisfaction: null,
     certificateNo: "",
   }));
   saveEducationEnrollments();
-  window.alert("교육 신청이 완료되었습니다.");
+  window.alert(isWaitlisted ? "대기신청이 완료되었습니다." : "교육 신청이 완료되었습니다.");
+  render();
+}
+
+function cancelEducationScheduleApplication(enrollmentId) {
+  const index = educationEnrollments.findIndex((enrollment) => enrollment.id === enrollmentId);
+  if (index < 0) {
+    return;
+  }
+
+  const target = educationEnrollments[index];
+  const schedule = getEducationScheduleById(target.scheduleId);
+  if (!schedule || target.completed) {
+    window.alert("수료 완료된 과정은 취소할 수 없습니다.");
+    return;
+  }
+
+  const referenceToken = toIsoDate(REFERENCE_DATE);
+  const startDate = isValidDateString(schedule.applicationStartDate) ? schedule.applicationStartDate : schedule.startDate;
+  const endDate = isValidDateString(schedule.applicationEndDate) ? schedule.applicationEndDate : startDate;
+  if (!isValidDateString(startDate) || !isValidDateString(endDate) || referenceToken < startDate || referenceToken > endDate) {
+    window.alert("접수기간 내 신청 건만 취소할 수 있습니다.");
+    return;
+  }
+
+  const shouldCancel = window.confirm("선택한 교육 신청을 취소할까요?");
+  if (!shouldCancel) {
+    return;
+  }
+
+  educationEnrollments.splice(index, 1);
+  saveEducationEnrollments();
   render();
 }
 
@@ -4635,6 +4724,43 @@ function applyCertificationExam(examId, applicationDraft = {}) {
   });
   saveCertificationExamApplications();
   window.alert("시험 접수가 완료되었습니다.");
+  render();
+}
+
+function cancelCertificationExamApplication(applicationId) {
+  const index = certificationExamApplications.findIndex((item) => item.id === applicationId);
+  if (index < 0) {
+    return;
+  }
+
+  const target = certificationExamApplications[index];
+  if (target.completed) {
+    window.alert("완료된 시험 접수는 취소할 수 없습니다.");
+    return;
+  }
+
+  const exam = getCertificationExamById(target.examId);
+  if (!exam) {
+    window.alert("시험 정보를 찾을 수 없습니다.");
+    return;
+  }
+
+  const referenceToken = toIsoDate(REFERENCE_DATE);
+  const startDate = isValidDateString(exam.applicationStartDate) ? exam.applicationStartDate : String(exam.examDateTime || "").slice(0, 10);
+  const endDateSource = isValidDateString(exam.applicationEndDate) ? exam.applicationEndDate : startDate;
+  const endDate = parseDate(endDateSource) >= parseDate(startDate) ? endDateSource : startDate;
+  if (!isValidDateString(startDate) || !isValidDateString(endDate) || referenceToken < startDate || referenceToken > endDate) {
+    window.alert("접수기간 내 신청 건만 취소할 수 있습니다.");
+    return;
+  }
+
+  const shouldCancel = window.confirm("선택한 시험 신청을 취소할까요?");
+  if (!shouldCancel) {
+    return;
+  }
+
+  certificationExamApplications.splice(index, 1);
+  saveCertificationExamApplications();
   render();
 }
 
@@ -5654,6 +5780,7 @@ function renderQualificationTable(filteredQualifications) {
       const qualificationCompany = qualification.company || "-";
       const qualificationName = qualification.qualificationType || "-";
       const qualificationGrade = qualification.grade || "-";
+      const qualificationTypeClass = getQualificationTypeClass(qualificationName);
       const ownerName = qualification.name || "-";
       const certificateNo = qualification.certificateNo || "-";
 
@@ -5671,7 +5798,7 @@ function renderQualificationTable(filteredQualifications) {
           </td>
           <td class="qualification-title-cell">
             <div class="qualification-title-block">
-              <strong>${escapeHtml(qualificationName)}</strong>
+              <strong><span class="qualification-type-badge ${qualificationTypeClass}">${escapeHtml(qualificationName)}</span></strong>
               <span class="qualification-title-meta">${escapeHtml(qualificationGrade)}</span>
             </div>
           </td>
@@ -5797,10 +5924,10 @@ function renderQualificationTypeBoard(filteredQualifications) {
     const ratio = entry.total / total;
     const nextAngle = angleCursor + (ratio * 360);
     const color = entry.type === "6σ"
-      ? "#5a9ff2"
+      ? "#2563eb"
       : entry.type === "AICA"
-        ? "#39b39a"
-        : "#eea54a";
+        ? "#f97316"
+        : "#9333ea";
 
     colorStops.push(`${color} ${angleCursor}deg ${nextAngle}deg`);
     angleCursor = nextAngle;
@@ -6023,7 +6150,7 @@ function renderEducationCalendarPage() {
     elements.educationMetricScore.textContent = String(completedCount);
     const titleNode = elements.educationMetricScore.previousElementSibling;
     if (titleNode) {
-      titleNode.textContent = "완료된 과정";
+      titleNode.textContent = `${currentYear}년 완료된 과정`;
     }
   }
 
@@ -6129,27 +6256,37 @@ function renderEducationCalendarPage() {
   const selectedCourse = getEducationCourseById(selectedSchedule.courseId);
   const identity = getEducationCurrentIdentity();
   const enrollmentCount = getEducationEnrollmentCount(selectedSchedule.id);
+  const confirmedEnrollmentCount = getEducationConfirmedEnrollmentCount(selectedSchedule.id);
+  const waitlistCount = getEducationWaitlistCount(selectedSchedule.id);
   const capacity = Math.max(0, parseNumber(selectedSchedule.capacity, 0));
+  const waitlistLimit = getEducationWaitlistLimit(capacity);
   const alreadyApplied = educationEnrollments.some((enrollment) =>
     enrollment.scheduleId === selectedSchedule.id && enrollment.employeeId === identity.employeeId
+  );
+  const alreadyWaitlisted = educationEnrollments.some((enrollment) =>
+    enrollment.scheduleId === selectedSchedule.id && enrollment.employeeId === identity.employeeId && enrollment.waitlisted
   );
   const canApply = hasEducationApplyAccess();
   const recruitStatusKey = getEducationRecruitStatusKey(selectedSchedule);
   const recruitStatusLabel = educationRecruitStatusLabels[recruitStatusKey] || educationRecruitStatusLabels.planned;
   const canRecruitApply = recruitStatusKey === "open";
-  const applyDisabled = alreadyApplied || !canApply || !canRecruitApply;
+  const canWaitlistApply = isEducationWaitlistOpen(selectedSchedule);
+  const canSubmitApplication = canRecruitApply || canWaitlistApply;
+  const applyDisabled = alreadyApplied || !canApply || !canSubmitApplication;
   const durationLabel = selectedSchedule.daysText && selectedSchedule.hoursText
     ? `${selectedSchedule.daysText} (${selectedSchedule.hoursText})`
     : (selectedSchedule.daysText || selectedSchedule.hoursText || selectedCourse?.durationText || "-");
   const applyLabel = alreadyApplied
-    ? "신청완료"
+    ? (alreadyWaitlisted ? "대기신청완료" : "신청완료")
     : !canApply
       ? "신청권한 없음"
       : recruitStatusKey === "planned"
-        ? "모집예정"
-        : recruitStatusKey === "closed"
-          ? "모집마감"
-          : "교육 신청하기";
+        ? "접수예정"
+        : canWaitlistApply
+          ? "대기신청"
+          : recruitStatusKey === "closed"
+            ? "모집마감"
+            : "교육 신청하기";
   const isApplyFormVisible = state.educationApplyFormScheduleId === selectedSchedule.id && !applyDisabled;
   const positionOptions = ["임원", "수석", "책임", "선임", "사원"];
   const defaultPosition = positionOptions.includes(identity.position) ? identity.position : "";
@@ -6216,7 +6353,8 @@ function renderEducationCalendarPage() {
     <ul class="education-detail-list">
       <li><span>대/중분류</span><strong>${escapeHtml(`${selectedSchedule.majorCategory || selectedCourse?.majorCategory || "-"} · ${selectedSchedule.middleCategory || selectedCourse?.subCategory || "-"}`)}</strong></li>
       <li><span>추천 대상</span><strong>${escapeHtml(selectedSchedule.recommendedTarget || selectedCourse?.recommendedFor || selectedCourse?.targetLevel || "-")}</strong></li>
-      <li><span>신청인원/정원</span><strong>${escapeHtml(`${enrollmentCount}/${capacity}`)}</strong></li>
+      <li><span>신청인원/정원</span><strong>${escapeHtml(`${confirmedEnrollmentCount}/${capacity}`)}</strong></li>
+      <li><span>현재 대기자 수</span><strong>${escapeHtml(`${waitlistCount}명${waitlistLimit ? ` / ${waitlistLimit}명` : ""}`)}</strong></li>
       <li><span>교육 시간</span><strong>${escapeHtml(durationLabel)}</strong></li>
       <li><span>일정</span><strong>${escapeHtml(getEducationDateRangeLabel(selectedSchedule.startDate, selectedSchedule.endDate))}</strong></li>
       <li><span>접수기간</span><strong>${escapeHtml(getEducationDateRangeLabel(selectedSchedule.applicationStartDate, selectedSchedule.applicationEndDate))}</strong></li>
@@ -6225,7 +6363,7 @@ function renderEducationCalendarPage() {
     </ul>
     <button
       type="button"
-      class="primary-button education-apply-button ${recruitStatusKey === "closed" ? "is-closed" : ""} ${alreadyApplied ? "is-complete" : ""}"
+      class="primary-button education-apply-button ${recruitStatusKey === "closed" ? "is-closed" : ""} ${canWaitlistApply && !alreadyApplied ? "is-waitlist" : ""} ${alreadyApplied ? "is-complete" : ""}"
       data-education-apply-toggle="${selectedSchedule.id}"
       ${applyDisabled ? "disabled" : ""}
     >${applyLabel}</button>
@@ -6311,44 +6449,102 @@ function renderMyLearningPage() {
   }
 
   const myEnrollments = getMyLearningEnrollments();
+  const identity = getEducationCurrentIdentity();
+  const referenceToken = toIsoDate(REFERENCE_DATE);
+  const isCancelableInPeriod = (startDate, endDate) => (
+    isValidDateString(startDate)
+    && isValidDateString(endDate)
+    && referenceToken >= startDate
+    && referenceToken <= endDate
+  );
   const rows = myEnrollments.map((enrollment) => {
     const schedule = getEducationScheduleById(enrollment.scheduleId);
     const course = schedule ? getEducationCourseById(schedule.courseId) : null;
     const status = getEducationLearningStatus(enrollment, schedule);
     const surveyResponse = getSurveyResponseByEnrollment(enrollment.id);
+    const hoursText = String(
+      schedule?.hoursText
+      || (course?.trainingHours ? `${course.trainingHours}시간` : "")
+      || "-"
+    ).trim();
+    const hoursValue = parseEducationAdminHoursCount(hoursText);
     return {
       enrollment,
       schedule,
       course,
       status,
       surveyResponse,
+      hoursText,
+      hoursValue,
     };
   });
+  const examRows = certificationExamApplications
+    .filter((application) => (
+      application.employeeId === identity.employeeId
+      || (application.name === identity.name && application.company === identity.company)
+    ))
+    .map((application) => {
+      const exam = getCertificationExamById(application.examId);
+      const examDate = String(exam?.examDateTime || "").slice(0, 10);
+      const examTitle = exam?.examTitle || `${exam?.examType || "시험"} ${exam?.examGrade || ""}`.trim() || "시험";
+      const applicationStartDate = isValidDateString(exam?.applicationStartDate) ? exam.applicationStartDate : examDate;
+      const applicationEndDate = isValidDateString(exam?.applicationEndDate) ? exam.applicationEndDate : applicationStartDate;
+      return {
+        kind: "exam",
+        id: application.id,
+        title: examTitle,
+        periodLabel: examDate ? formatDateWithYear(examDate) : "-",
+        hoursText: "-",
+        completionLabel: application.completed ? "응시완료" : "신청완료",
+        completionClass: application.completed ? "is-completed" : "is-incomplete",
+        canCancel: !application.completed && isCancelableInPeriod(applicationStartDate, applicationEndDate),
+      };
+    });
 
-  const completedRows = rows.filter((row) => row.enrollment.completed);
-  const inProgressRows = rows.filter((row) => !row.enrollment.completed && row.schedule?.status === "in_progress");
-  const scoreList = completedRows
-    .map((row) => parseNumber(row.enrollment.satisfaction, 0))
-    .filter((score) => score > 0);
-  const averageScore = scoreList.length ? (scoreList.reduce((sum, score) => sum + score, 0) / scoreList.length) : 0;
+  const currentYear = String(REFERENCE_DATE.getFullYear());
+  const currentYearRows = rows.filter((row) => {
+    const scheduleYear = String(row.schedule?.endDate || row.schedule?.startDate || "").slice(0, 4);
+    return scheduleYear === currentYear;
+  });
+  const completedRows = currentYearRows.filter((row) => row.enrollment.completed);
+  const inProgressRows = currentYearRows.filter((row) => !row.enrollment.completed && row.schedule?.status === "in_progress");
+  const yearlyCompletedHours = completedRows
+    .reduce((sum, row) => sum + row.hoursValue, 0);
+  const totalTrainingHours = rows.reduce((sum, row) => sum + row.hoursValue, 0);
 
   if (elements.myLearningMetricApplied) {
-    elements.myLearningMetricApplied.textContent = String(rows.length);
+    elements.myLearningMetricApplied.textContent = String(currentYearRows.length);
+    const titleNode = elements.myLearningMetricApplied.previousElementSibling;
+    if (titleNode) {
+      titleNode.textContent = `${currentYear}년 신청건수`;
+    }
   }
   if (elements.myLearningMetricProgress) {
     elements.myLearningMetricProgress.textContent = String(inProgressRows.length);
+    const titleNode = elements.myLearningMetricProgress.previousElementSibling;
+    if (titleNode) {
+      titleNode.textContent = `${currentYear}년 진행중과정`;
+    }
   }
   if (elements.myLearningMetricCompleted) {
     elements.myLearningMetricCompleted.textContent = String(completedRows.length);
+    const titleNode = elements.myLearningMetricCompleted.previousElementSibling;
+    if (titleNode) {
+      titleNode.textContent = `${currentYear}년 수료과정`;
+    }
   }
   if (elements.myLearningMetricScore) {
-    elements.myLearningMetricScore.textContent = averageScore ? averageScore.toFixed(2) : "0.00";
+    elements.myLearningMetricScore.textContent = `${yearlyCompletedHours}시간`;
+    const titleNode = elements.myLearningMetricScore.previousElementSibling;
+    if (titleNode) {
+      titleNode.textContent = `${currentYear}년 교육이수시간`;
+    }
   }
 
-  if (!rows.length) {
+  if (!rows.length && !examRows.length) {
     elements.myLearningTableBody.innerHTML = `
       <tr>
-        <td colspan="4" class="empty-state">신청한 교육 과정이 없습니다. 교육/시험일정에서 원하는 과정을 신청해 주세요.</td>
+        <td colspan="6" class="empty-state">신청한 교육 과정이 없습니다. 교육/시험일정에서 원하는 과정을 신청해 주세요.</td>
       </tr>
     `;
     elements.myLearningUpcomingList.innerHTML = '<div class="empty-state">다가오는 일정이 없습니다.</div>';
@@ -6361,26 +6557,29 @@ function renderMyLearningPage() {
     state.myLearningEvaluationEnrollmentId = null;
   }
 
-  elements.myLearningTableBody.innerHTML = rows
-    .map((row) => {
+  const learningRowsHtml = [
+    ...rows.map((row) => {
       const completionLabel = row.enrollment.completed ? "수료완료" : "미수료";
       const completionClass = row.enrollment.completed ? "is-completed" : "is-incomplete";
-      const scoreValue = row.surveyResponse?.averageScore ?? row.enrollment.satisfaction;
       const isEvaluationCompleted = Boolean(row.surveyResponse) || Number(row.enrollment.satisfaction) > 0;
-      const satisfactionLabel = scoreValue
-        ? `${Number(scoreValue).toFixed(1)}점`
-        : "미평가";
       const evaluationButtonLabel = isEvaluationCompleted ? "평가완료" : "평가";
       const isSelectedEvaluation = row.enrollment.id === state.myLearningEvaluationEnrollmentId;
+      const canCancel = !row.enrollment.completed && isCancelableInPeriod(
+        row.schedule?.applicationStartDate,
+        row.schedule?.applicationEndDate,
+      );
+      const cancelCellMarkup = canCancel
+        ? `<button type="button" class="ghost-button learning-cancel-button" data-learning-cancel="education:${row.enrollment.id}">취소</button>`
+        : (!row.enrollment.completed ? '<span class="learning-cancel-disabled">취소불가</span>' : '<span class="learning-cancel-disabled">-</span>');
 
       return `
         <tr>
           <td>${escapeHtml(getEducationAdminDisplayCourseName(row.schedule || {}, row.course))}</td>
           <td>${escapeHtml(row.schedule ? getEducationDateRangeLabel(row.schedule.startDate, row.schedule.endDate) : "-")}</td>
+          <td class="learning-hours-cell">${escapeHtml(row.hoursText)}</td>
           <td><span class="learning-status-badge ${completionClass}">${escapeHtml(completionLabel)}</span></td>
           <td>
             <div class="learning-evaluation-cell">
-              <span class="learning-evaluation-score">${escapeHtml(satisfactionLabel)}</span>
               <button
                 type="button"
                 class="outline-button learning-evaluate-button ${isSelectedEvaluation ? "is-active" : ""} ${isEvaluationCompleted ? "is-complete" : ""}"
@@ -6389,10 +6588,38 @@ function renderMyLearningPage() {
               >${evaluationButtonLabel}</button>
             </div>
           </td>
+          <td class="learning-cancel-cell">${cancelCellMarkup}</td>
         </tr>
       `;
-    })
+    }),
+    ...examRows.map((row) => {
+      const cancelCellMarkup = row.canCancel
+        ? `<button type="button" class="ghost-button learning-cancel-button" data-learning-cancel="exam:${row.id}">취소</button>`
+        : (row.completionLabel === "신청완료" ? '<span class="learning-cancel-disabled">취소불가</span>' : '<span class="learning-cancel-disabled">-</span>');
+      return `
+        <tr>
+          <td>${escapeHtml(row.title)}</td>
+          <td>${escapeHtml(row.periodLabel)}</td>
+          <td class="learning-hours-cell">${escapeHtml(row.hoursText)}</td>
+          <td><span class="learning-status-badge ${row.completionClass}">${escapeHtml(row.completionLabel)}</span></td>
+          <td>
+            <div class="learning-evaluation-cell">
+              <span class="learning-evaluate-placeholder">-</span>
+            </div>
+          </td>
+          <td class="learning-cancel-cell">${cancelCellMarkup}</td>
+        </tr>
+      `;
+    }),
+  ]
     .join("");
+  elements.myLearningTableBody.innerHTML = `${learningRowsHtml}
+    <tr class="learning-summary-row">
+      <td colspan="3"><strong>교육시간 합계</strong></td>
+      <td class="learning-hours-cell"><strong>${escapeHtml(`${totalTrainingHours}시간`)}</strong></td>
+      <td colspan="2" class="learning-summary-note"></td>
+    </tr>
+  `;
 
   if (!state.myLearningEvaluationEnrollmentId) {
     elements.myLearningEvaluationPanel.hidden = true;
@@ -6472,18 +6699,37 @@ function renderMyLearningPage() {
 
   if (!upcomingRows.length) {
     elements.myLearningUpcomingList.innerHTML = '<div class="empty-state">다가오는 일정이 없습니다.</div>';
+    state.myLearningUpcomingEnrollmentId = null;
     return;
+  }
+
+  if (!upcomingRows.some((row) => row.enrollment.id === state.myLearningUpcomingEnrollmentId)) {
+    state.myLearningUpcomingEnrollmentId = null;
   }
 
   elements.myLearningUpcomingList.innerHTML = upcomingRows
     .slice(0, 6)
-    .map((row, index) => `
-      <div class="learning-upcoming-item fade-up" style="animation-delay:${index * 45}ms">
+    .map((row, index) => {
+      const isExpanded = row.enrollment.id === state.myLearningUpcomingEnrollmentId;
+      const detailMarkup = isExpanded
+        ? `
+          <div class="learning-upcoming-detail">
+            <p>${escapeHtml(`과정 상세: ${row.course?.description || row.schedule.note || "-"}`)}</p>
+            <p>${escapeHtml(`교육시간: ${row.hoursText || "-"}`)}</p>
+            <p>${escapeHtml(`모집상태: ${getEducationRecruitStatusLabel(row.schedule)}`)}</p>
+            <p>${escapeHtml(`필수구분: ${row.schedule.requiredType || row.course?.requiredType || "-"}`)}</p>
+          </div>
+        `
+        : "";
+      return `
+      <button type="button" class="learning-upcoming-item fade-up ${isExpanded ? "is-expanded" : ""}" data-learning-upcoming="${row.enrollment.id}" style="animation-delay:${index * 45}ms">
         <strong>${escapeHtml(getEducationAdminDisplayCourseName(row.schedule || {}, row.course))}</strong>
-        <span>${escapeHtml(getEducationDateRangeLabel(row.schedule.startDate, row.schedule.endDate))}</span>
-        <p>${escapeHtml(`${row.schedule.location} · ${row.course?.track || "트랙미정"}`)}</p>
-      </div>
-    `)
+        <span>${escapeHtml(`교육일자: ${getEducationDateRangeLabel(row.schedule.startDate, row.schedule.endDate)}`)}</span>
+        <p>${escapeHtml(`교육장소: ${row.schedule.location || "-"}`)}</p>
+        ${detailMarkup}
+      </button>
+    `;
+    })
     .join("");
 }
 
@@ -7668,6 +7914,21 @@ function renderEducationAdminPage() {
       .includes(normalizedQuery);
 
     return matchesYear && matchesDivision && matchesStatus && matchesSearch;
+  });
+  filteredRows.sort((left, right) => {
+    const leftDate = String(left.schedule.endDate || left.schedule.startDate || "");
+    const rightDate = String(right.schedule.endDate || right.schedule.startDate || "");
+    if (leftDate !== rightDate) {
+      return rightDate.localeCompare(leftDate);
+    }
+
+    const leftStartDate = String(left.schedule.startDate || "");
+    const rightStartDate = String(right.schedule.startDate || "");
+    if (leftStartDate !== rightStartDate) {
+      return rightStartDate.localeCompare(leftStartDate);
+    }
+
+    return String(left.smallCategory || "").localeCompare(String(right.smallCategory || ""), "ko-KR");
   });
 
   const visibleIdSet = new Set(filteredRows.map((row) => row.schedule.id));
@@ -8918,7 +9179,7 @@ function scrollSelectedTaskDetailIntoView() {
 function hasTaskManagementAccess() {
   const profile = window.innotrackFirebase?.getCurrentUserProfile?.();
   const role = normalizeAppRole(profile?.role);
-  return role === "user" || role === "innovation_manager" || role === "super_admin";
+  return role === "user" || role === "education_manager" || role === "innovation_manager" || role === "super_admin";
 }
 
 function hasTaskGlobalManagementAccess() {
@@ -8930,7 +9191,7 @@ function hasTaskGlobalManagementAccess() {
 function isTaskOwner(project) {
   const profile = window.innotrackFirebase?.getCurrentUserProfile?.();
   const role = normalizeAppRole(profile?.role);
-  if (!project || !profile || role !== "user") {
+  if (!project || !profile || (role !== "user" && role !== "education_manager")) {
     return false;
   }
 
@@ -9618,6 +9879,26 @@ function bindEvents() {
   });
 
   elements.myLearningTableBody?.addEventListener("click", (event) => {
+    const cancelButton = event.target.closest("[data-learning-cancel]");
+    if (cancelButton) {
+      const cancelToken = cancelButton.getAttribute("data-learning-cancel");
+      if (!cancelToken) {
+        return;
+      }
+      const [type, recordId] = cancelToken.split(":");
+      if (!recordId) {
+        return;
+      }
+      if (type === "education") {
+        cancelEducationScheduleApplication(recordId);
+        return;
+      }
+      if (type === "exam") {
+        cancelCertificationExamApplication(recordId);
+      }
+      return;
+    }
+
     const evaluateButton = event.target.closest("[data-learning-evaluate]");
     if (!evaluateButton) {
       return;
@@ -9640,6 +9921,25 @@ function bindEvents() {
       return;
     }
     state.myLearningEvaluationEnrollmentId = null;
+    render();
+  });
+
+  elements.myLearningUpcomingList?.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    const item = target.closest("[data-learning-upcoming]");
+    if (!item) {
+      return;
+    }
+    const enrollmentId = item.getAttribute("data-learning-upcoming");
+    if (!enrollmentId) {
+      return;
+    }
+    state.myLearningUpcomingEnrollmentId = state.myLearningUpcomingEnrollmentId === enrollmentId
+      ? null
+      : enrollmentId;
     render();
   });
 

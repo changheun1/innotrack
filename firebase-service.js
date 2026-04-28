@@ -134,6 +134,9 @@
     profileDepartmentInput: document.querySelector("#profile-department-input"),
     signupCompany: document.querySelector("#signup-company"),
     usersTableBody: document.querySelector("#users-table-body"),
+    usersSaveButton: document.querySelector("#users-save-button"),
+    usersDeleteButton: document.querySelector("#users-delete-button"),
+    usersCopyUidButton: document.querySelector("#users-copy-uid-button"),
     profileAvatar: document.querySelector("#profile-avatar"),
     profileName: document.querySelector("#profile-name"),
     profileRole: document.querySelector("#profile-role"),
@@ -142,6 +145,7 @@
   const state = {
     auth: null,
     db: null,
+    functions: null,
     firebaseReady: false,
     currentUser: null,
     currentUserProfile: null,
@@ -158,6 +162,8 @@
     surveyFormsRef: null,
     surveyResponsesRef: null,
     usersRef: null,
+    selectedUserUid: "",
+    usersCache: {},
   };
 
   const DELETED_ACCOUNT_ERROR = "INNOTRACK_DELETED_ACCOUNT";
@@ -505,19 +511,19 @@
 
   function getRoleOptionLabel(role) {
     if (role === ROLE_SUPER_ADMIN) {
-      return "시스템 관리자";
+      return "시스템관리자";
     }
 
     if (role === ROLE_INNOVATION_MANAGER) {
-      return "혁신과제 관리자";
+      return "혁신관리자";
     }
 
     if (role === ROLE_EDUCATION_MANAGER) {
-      return "교육·자격시험 관리자";
+      return "교육관리자";
     }
 
     if (role === ROLE_USER) {
-      return "일반 사용자";
+      return "사용자";
     }
 
     if (role === ROLE_GUEST) {
@@ -553,6 +559,37 @@
     ].join("");
   }
 
+  function syncUsersToolbarState() {
+    const hasSelection = Boolean(state.selectedUserUid);
+    if (elements.usersSaveButton) {
+      elements.usersSaveButton.disabled = !hasSelection;
+    }
+    if (elements.usersDeleteButton) {
+      elements.usersDeleteButton.disabled = !hasSelection;
+    }
+    if (elements.usersCopyUidButton) {
+      elements.usersCopyUidButton.disabled = !hasSelection;
+    }
+  }
+
+  function getSelectedUserRow() {
+    if (!elements.usersTableBody || !state.selectedUserUid) {
+      return null;
+    }
+    return Array.from(elements.usersTableBody.querySelectorAll("tr[data-user-uid]"))
+      .find((row) => row.getAttribute("data-user-uid") === state.selectedUserUid) || null;
+  }
+
+  function refreshUsersRowSelectionUi() {
+    if (!elements.usersTableBody) {
+      return;
+    }
+    elements.usersTableBody.querySelectorAll("tr[data-user-uid]").forEach((row) => {
+      const uid = String(row.getAttribute("data-user-uid") || "");
+      row.classList.toggle("is-selected", Boolean(state.selectedUserUid) && uid === state.selectedUserUid);
+    });
+  }
+
   function renderUsersTable(usersValue) {
     if (!elements.usersTableBody) {
       return;
@@ -560,6 +597,8 @@
 
     if (!hasAdminAccess()) {
       elements.usersTableBody.innerHTML = `<tr><td colspan="9" class="empty-cell">${TEXT.usersAdminOnly}</td></tr>`;
+      state.selectedUserUid = "";
+      syncUsersToolbarState();
       return;
     }
 
@@ -581,7 +620,13 @@
 
     if (!users.length) {
       elements.usersTableBody.innerHTML = `<tr><td colspan="9" class="empty-cell">${TEXT.usersEmpty}</td></tr>`;
+      state.selectedUserUid = "";
+      syncUsersToolbarState();
       return;
+    }
+
+    if (!users.some((user) => user.uid === state.selectedUserUid)) {
+      state.selectedUserUid = users[0]?.uid || "";
     }
 
     elements.usersTableBody.innerHTML = users.map((user) => {
@@ -590,9 +635,10 @@
       const statusLabel = role === ROLE_GUEST ? "승인대기" : "활성";
       const roleOptions = renderRoleOptions(role);
       const companyOptions = renderCompanyOptions(user.company);
+      const isSelected = user.uid === state.selectedUserUid;
 
       return `
-        <tr data-user-uid="${escapeHtml(user.uid)}">
+        <tr class="user-row ${isSelected ? "is-selected" : ""}" data-user-uid="${escapeHtml(user.uid)}">
           <td>
             <input
               class="user-edit-input"
@@ -625,15 +671,12 @@
           <td><span class="user-status-badge ${statusClass}">${statusLabel}</span></td>
           <td class="user-date-cell">${formatDateOnly(user.createdAt)}</td>
           <td class="user-date-cell">${formatDateTime(user.lastLoginAt)}</td>
-          <td>
-            <div class="user-action-buttons">
-              <button type="button" class="outline-button user-save-button" data-user-uid="${escapeHtml(user.uid)}">저장</button>
-              <button type="button" class="action-button action-button-danger user-delete-button" data-user-uid="${escapeHtml(user.uid)}">삭제</button>
-            </div>
-          </td>
+          <td class="user-uid-cell" title="${escapeHtml(user.uid)}">${escapeHtml(user.uid)}</td>
         </tr>
       `;
     }).join("");
+    refreshUsersRowSelectionUi();
+    syncUsersToolbarState();
   }
 
   async function updateUserRecord(uid, payload) {
@@ -688,6 +731,19 @@
     }
 
     try {
+      let authDeleteError = null;
+      if (state.functions) {
+        try {
+          // Try auth account deletion first via callable Cloud Function.
+          const deleteAuthUser = state.functions.httpsCallable("deleteAuthUser");
+          await deleteAuthUser({ uid: String(uid) });
+        } catch (error) {
+          authDeleteError = error;
+        }
+      } else {
+        authDeleteError = new Error("Firebase Functions SDK가 로드되지 않았습니다.");
+      }
+
       await state.db.ref(`users/${uid}`).remove();
 
       if (uid === state.currentUser?.uid) {
@@ -699,10 +755,22 @@
         await state.auth?.signOut();
       }
 
+      if (authDeleteError) {
+        const authCode = authDeleteError?.code ? `\ncode: ${authDeleteError.code}` : "";
+        const authMessage = authDeleteError?.message ? `\n${authDeleteError.message}` : "";
+        window.alert(`회원 프로필은 삭제되었지만 Authentication 계정 삭제는 실패했습니다.${authCode}${authMessage}\nFirebase Authentication에서 수동 삭제해 주세요.`);
+      }
+
       window.alert(TEXT.profileDeleted);
       return true;
     } catch (error) {
-      window.alert(TEXT.profileDeleteFail);
+      const errorCode = error?.code ? `\ncode: ${error.code}` : "";
+      const errorMessage = error?.message ? `\n${error.message}` : "";
+      const isFunctionsInternal = String(error?.code || "") === "functions/internal";
+      const guidance = isFunctionsInternal
+        ? "\nCloud Functions 배포/권한을 확인해 주세요. (Blaze 요금제 필요)"
+        : "";
+      window.alert(`${TEXT.profileDeleteFail}${errorCode}${errorMessage}${guidance}`);
       return false;
     }
   }
@@ -811,8 +879,11 @@
 
     state.usersRef = state.db.ref("users");
     state.usersRef.on("value", (snapshot) => {
-      renderUsersTable(snapshot.val() || {});
+      state.usersCache = snapshot.val() || {};
+      renderUsersTable(state.usersCache);
     }, (error) => {
+      state.selectedUserUid = "";
+      syncUsersToolbarState();
       if (elements.usersTableBody) {
         elements.usersTableBody.innerHTML = `<tr><td colspan="9" class="empty-cell">${TEXT.usersLoadFail}</td></tr>`;
       }
@@ -1161,63 +1232,104 @@
       if (!(target instanceof HTMLElement)) {
         return;
       }
-
-      const saveButton = target.closest(".user-save-button");
-      if (saveButton instanceof HTMLButtonElement) {
-        const row = saveButton.closest("tr");
-        if (!row) {
-          return;
+      const row = target.closest("tr[data-user-uid]");
+      if (row) {
+        const uid = String(row.getAttribute("data-user-uid") || "").trim();
+        if (uid && uid !== state.selectedUserUid) {
+          state.selectedUserUid = uid;
+          refreshUsersRowSelectionUi();
+          syncUsersToolbarState();
         }
+      }
+      const interactiveTarget = target.closest("input, select, button, textarea, a, label");
+      if (interactiveTarget) {
+        return;
+      }
+      if (!row) {
+        return;
+      }
+      refreshUsersRowSelectionUi();
+    });
 
-        const nameField = row.querySelector('[data-user-field="name"]');
-        const companyField = row.querySelector('[data-user-field="company"]');
-        const departmentField = row.querySelector('[data-user-field="department"]');
-        const roleField = row.querySelector('[data-user-field="role"]');
+    elements.usersTableBody?.addEventListener("focusin", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) {
+        return;
+      }
+      const row = target.closest("tr[data-user-uid]");
+      if (!row) {
+        return;
+      }
+      const uid = String(row.getAttribute("data-user-uid") || "").trim();
+      if (!uid || uid === state.selectedUserUid) {
+        return;
+      }
+      state.selectedUserUid = uid;
+      refreshUsersRowSelectionUi();
+      syncUsersToolbarState();
+    });
 
-        if (
-          !(nameField instanceof HTMLInputElement) ||
-          !(companyField instanceof HTMLSelectElement) ||
-          !(departmentField instanceof HTMLInputElement) ||
-          !(roleField instanceof HTMLSelectElement)
-        ) {
-          return;
-        }
-
-        saveButton.disabled = true;
-
-        try {
-          await updateUserRecord(saveButton.dataset.userUid, {
-            name: nameField.value,
-            company: companyField.value,
-            department: departmentField.value,
-            role: roleField.value,
-          });
-        } finally {
-          saveButton.disabled = false;
-        }
-
+    elements.usersSaveButton?.addEventListener("click", async () => {
+      const row = getSelectedUserRow();
+      if (!row) {
         return;
       }
 
-      const deleteButton = target.closest(".user-delete-button");
-      if (deleteButton instanceof HTMLButtonElement) {
-        const userUid = deleteButton.dataset.userUid;
-        if (!userUid) {
-          return;
-        }
+      const nameField = row.querySelector('[data-user-field="name"]');
+      const companyField = row.querySelector('[data-user-field="company"]');
+      const departmentField = row.querySelector('[data-user-field="department"]');
+      const roleField = row.querySelector('[data-user-field="role"]');
 
-        const shouldDelete = window.confirm("선택한 회원 정보를 삭제할까요?\n삭제 후에는 회원관리 목록에서 제거됩니다.");
-        if (!shouldDelete) {
-          return;
-        }
+      if (
+        !(nameField instanceof HTMLInputElement)
+        || !(companyField instanceof HTMLSelectElement)
+        || !(departmentField instanceof HTMLInputElement)
+        || !(roleField instanceof HTMLSelectElement)
+      ) {
+        return;
+      }
 
-        deleteButton.disabled = true;
+      elements.usersSaveButton.disabled = true;
+      try {
+        await updateUserRecord(state.selectedUserUid, {
+          name: nameField.value,
+          company: companyField.value,
+          department: departmentField.value,
+          role: roleField.value,
+        });
+      } finally {
+        syncUsersToolbarState();
+      }
+    });
 
-        try {
-          await deleteUserRecord(userUid);
-        } finally {
-          deleteButton.disabled = false;
-        }
+    elements.usersDeleteButton?.addEventListener("click", async () => {
+      const userUid = String(state.selectedUserUid || "").trim();
+      if (!userUid) {
+        return;
+      }
+      const shouldDelete = window.confirm("선택한 회원 정보를 삭제할까요?\n삭제 후에는 회원관리 목록에서 제거됩니다.");
+      if (!shouldDelete) {
+        return;
+      }
+
+      elements.usersDeleteButton.disabled = true;
+      try {
+        await deleteUserRecord(userUid);
+      } finally {
+        syncUsersToolbarState();
+      }
+    });
+
+    elements.usersCopyUidButton?.addEventListener("click", async () => {
+      const uid = String(state.selectedUserUid || "").trim();
+      if (!uid) {
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(uid);
+        window.alert("UID를 복사했습니다.");
+      } catch (error) {
+        window.alert("UID 복사에 실패했습니다. 직접 선택해 복사해 주세요.");
       }
     });
 
@@ -1312,6 +1424,7 @@
         : firebaseGlobal.initializeApp(firebaseConfig);
       state.auth = typeof app.auth === "function" ? app.auth() : firebaseGlobal.auth();
       state.db = typeof app.database === "function" ? app.database() : firebaseGlobal.database();
+      state.functions = typeof app.functions === "function" ? app.functions("asia-northeast3") : null;
       state.firebaseReady = true;
 
       window.innotrackFirebase = {
