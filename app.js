@@ -4453,6 +4453,18 @@ function getEducationRecruitStatusLabel(schedule, referenceDate = REFERENCE_DATE
   return educationRecruitStatusLabels[getEducationRecruitStatusKey(schedule, referenceDate)] || educationRecruitStatusLabels.planned;
 }
 
+function isEducationRecruitPeriodOpen(schedule, referenceDate = REFERENCE_DATE) {
+  const referenceToken = referenceDate instanceof Date
+    ? toIsoDate(referenceDate)
+    : (isValidDateString(referenceDate) ? referenceDate : toIsoDate(REFERENCE_DATE));
+  const startDate = isValidDateString(schedule?.applicationStartDate)
+    ? schedule.applicationStartDate
+    : (isValidDateString(schedule?.startDate) ? schedule.startDate : referenceToken);
+  const endSource = isValidDateString(schedule?.applicationEndDate) ? schedule.applicationEndDate : startDate;
+  const endDate = parseDate(endSource) >= parseDate(startDate) ? endSource : startDate;
+  return referenceToken >= startDate && referenceToken <= endDate;
+}
+
 function getEducationCalendarChipStatus(schedule, referenceDate = REFERENCE_DATE) {
   const referenceToken = referenceDate instanceof Date
     ? toIsoDate(referenceDate)
@@ -6783,7 +6795,7 @@ function renderEducationCalendarPage() {
     || String(schedule.startDate || "").startsWith(`${currentYear}-`)
   ));
   const monthlyOpenedCount = monthSchedules.length;
-  const openRecruitCount = yearSchedules.filter((schedule) => getEducationRecruitStatusKey(schedule) === "open").length;
+  const openRecruitCount = yearSchedules.filter((schedule) => isEducationRecruitPeriodOpen(schedule)).length;
   const completedCount = yearSchedules.filter((schedule) => (
     schedule.status === "completed_needs_settlement"
     || schedule.status === "settled"
