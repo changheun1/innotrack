@@ -1353,6 +1353,14 @@ button {
   width: 100%;
 }
 
+.education-waitlist-notice {
+  display: block;
+  margin-top: 6px;
+  color: #9a5b0f;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .education-apply-button.is-closed,
 .education-apply-button.is-closed:disabled {
   background: #9aa3b2;
@@ -1525,6 +1533,17 @@ button {
   min-width: 0;
 }
 
+.learning-subtable-head {
+  margin-top: 14px;
+  margin-bottom: 6px;
+}
+
+.learning-subtable-head h4 {
+  margin: 8px 0 0;
+  font-size: 1.3rem;
+  color: inherit;
+}
+
 .learning-table th,
 .learning-table td {
   font-size: 0.84rem;
@@ -1585,8 +1604,13 @@ button {
 
 .learning-status-badge.is-planned,
 .learning-status-badge.is-applied {
-  background: #fff2e8;
-  color: #b16217;
+  background: #edf4ff;
+  color: #245cae;
+}
+
+.learning-status-badge.is-failed {
+  background: #fdeceb;
+  color: #b33f39;
 }
 
 .learning-certificate-button {
@@ -2375,6 +2399,19 @@ button {
   border-color: rgba(255, 255, 255, 0.76);
 }
 
+#admin-export-survey-responses-full-button {
+  min-height: 28px;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  background: linear-gradient(180deg, #f7faff 0%, #eef4ff 100%);
+  border-color: rgba(64, 120, 206, 0.28);
+  color: #2f5d9d;
+  box-shadow: 0 1px 6px rgba(20, 47, 79, 0.08);
+}
+
 .education-feedback-table-wrap table {
   min-width: 860px;
 }
@@ -2452,6 +2489,10 @@ button {
 
 .education-enrollment-col-notebook {
   width: 92px;
+}
+
+.education-enrollment-col-type {
+  width: 82px;
 }
 
 .education-enrollment-col-applied {
@@ -3574,6 +3615,14 @@ button {
   line-height: 1.2;
   justify-self: end;
   text-align: right;
+}
+
+.detail-metric-subvalue {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .detail-grade-value {

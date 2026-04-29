@@ -10,6 +10,8 @@ const SURVEY_QUESTION_STORAGE_KEY = "innotrack-survey-questions-v1";
 const SURVEY_RESPONSE_STORAGE_KEY = "innotrack-survey-responses-v1";
 const SURVEY_FORM_STORAGE_KEY = "innotrack-survey-forms-v1";
 const CERTIFICATION_EXAM_APPLICATION_STORAGE_KEY = "innotrack-certification-exam-applications-v1";
+const EXTERNAL_EDUCATION_HISTORY_STORAGE_KEY = "innotrack-external-education-history-v1";
+const EXTERNAL_QUALIFICATION_HISTORY_STORAGE_KEY = "innotrack-external-qualification-history-v1";
 const REFERENCE_DATE = (() => {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -991,6 +993,8 @@ let educationSchedules = loadEducationSchedules();
 let educationEnrollments = loadEducationEnrollments();
 let educationCostDetailsBySchedule = loadEducationCostDetails();
 let surveyResponses = loadSurveyResponses();
+let externalEducationHistories = loadExternalEducationHistories();
+let externalQualificationHistories = loadExternalQualificationHistories();
 
 const state = {
   activePage: "dashboard",
@@ -1223,6 +1227,7 @@ const elements = {
   myLearningMetricCompleted: document.querySelector("#my-learning-metric-completed"),
   myLearningMetricScore: document.querySelector("#my-learning-metric-score"),
   myLearningTableBody: document.querySelector("#my-learning-table-body"),
+  myLearningCertificationTableBody: document.querySelector("#my-learning-certification-table-body"),
   myLearningUpcomingList: document.querySelector("#my-learning-upcoming-list"),
   myLearningEvaluationPanel: document.querySelector("#my-learning-evaluation-panel"),
   educationAdminSearchInput: document.querySelector("#education-admin-search-input"),
@@ -1319,9 +1324,18 @@ const elements = {
   adminImportEducationSchedulesButton: document.querySelector("#admin-import-education-schedules-button"),
   adminImportEducationSchedulesFile: document.querySelector("#admin-import-education-schedules-file"),
   adminExportEducationEnrollmentsButton: document.querySelector("#admin-export-education-enrollments-button"),
+  adminImportEducationEnrollmentsButton: document.querySelector("#admin-import-education-enrollments-button"),
+  adminImportEducationEnrollmentsFile: document.querySelector("#admin-import-education-enrollments-file"),
+  adminExportExternalEducationHistoryButton: document.querySelector("#admin-export-external-education-history-button"),
+  adminImportExternalEducationHistoryButton: document.querySelector("#admin-import-external-education-history-button"),
+  adminImportExternalEducationHistoryFile: document.querySelector("#admin-import-external-education-history-file"),
+  adminExportExternalQualificationHistoryButton: document.querySelector("#admin-export-external-qualification-history-button"),
+  adminImportExternalQualificationHistoryButton: document.querySelector("#admin-import-external-qualification-history-button"),
+  adminImportExternalQualificationHistoryFile: document.querySelector("#admin-import-external-qualification-history-file"),
   adminExportEducationFeedbackButton: document.querySelector("#admin-export-education-feedback-button"),
   adminExportEducationCostsButton: document.querySelector("#admin-export-education-costs-button"),
   adminExportSurveyResultsButton: document.querySelector("#admin-export-survey-results-button"),
+  adminExportSurveyResponsesFullButton: document.querySelector("#admin-export-survey-responses-full-button"),
 };
 
 function setEducationAdminSelectOptions(selectField, options, fallbackValue) {
@@ -1624,6 +1638,56 @@ function parseNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseBoolean(value, fallback = false) {
+  const normalized = String(value == null ? "" : value).trim().toLowerCase();
+  if (!normalized) {
+    return fallback;
+  }
+  if (["1", "true", "y", "yes", "o"].includes(normalized)) {
+    return true;
+  }
+  if (["0", "false", "n", "no", "x"].includes(normalized)) {
+    return false;
+  }
+  return fallback;
+}
+
+function normalizeExternalEducationHistory(item, fallbackId = "") {
+  const startDate = isValidDateString(item?.startDate) ? item.startDate : "";
+  const endDate = isValidDateString(item?.endDate)
+    ? item.endDate
+    : (startDate || "");
+  return {
+    id: String(item?.id || fallbackId || `EXT-EDU-${String(Date.now()).slice(-6)}`).trim(),
+    email: String(item?.email || "").trim(),
+    company: String(item?.company || "").trim(),
+    name: String(item?.name || "").trim(),
+    courseName: String(item?.courseName || "").trim(),
+    institution: String(item?.institution || "").trim(),
+    startDate,
+    endDate,
+    hoursText: String(item?.hoursText || "-").trim(),
+    completed: Boolean(item?.completed),
+  };
+}
+
+function normalizeExternalQualificationHistory(item, fallbackId = "") {
+  const statusToken = String(item?.status || "신청완료").trim();
+  const allowedStatuses = ["신청완료", "합격", "불합격"];
+  const status = allowedStatuses.includes(statusToken) ? statusToken : "신청완료";
+  return {
+    id: String(item?.id || fallbackId || `EXT-QL-${String(Date.now()).slice(-6)}`).trim(),
+    email: String(item?.email || "").trim(),
+    company: String(item?.company || "").trim(),
+    name: String(item?.name || "").trim(),
+    qualificationName: String(item?.qualificationName || "").trim(),
+    grade: String(item?.grade || "").trim(),
+    certificateNo: String(item?.certificateNo || "").trim(),
+    acquiredDate: isValidDateString(item?.acquiredDate) ? item.acquiredDate : "",
+    status,
+  };
+}
+
 function escapeHtml(value) {
   return String(value)
     .replace(/&/g, "&amp;")
@@ -1786,6 +1850,7 @@ function exportEducationEnrollmentsCsv() {
     const schedule = getEducationScheduleById(enrollment.scheduleId);
     const course = schedule ? getEducationCourseById(schedule.courseId) : null;
     return {
+      scheduleId: enrollment.scheduleId,
       courseName: schedule ? getEducationAdminDisplayCourseName(schedule, course) : "삭제된 강의",
       company: enrollment.company,
       department: enrollment.department,
@@ -1796,10 +1861,12 @@ function exportEducationEnrollmentsCsv() {
       residentRegistrationNo: enrollment.residentRegistrationNo,
       notebookRequired: enrollment.notebookRequired,
       appliedAt: enrollment.appliedAt,
+      waitlisted: enrollment.waitlisted ? "대기" : "일반",
       completed: enrollment.completed ? "수료완료" : "미수료",
     };
   });
   const columns = [
+    { key: "scheduleId", label: "일정ID" },
     { key: "courseName", label: "강의명" },
     { key: "company", label: "법인명" },
     { key: "department", label: "부서" },
@@ -1810,6 +1877,7 @@ function exportEducationEnrollmentsCsv() {
     { key: "residentRegistrationNo", label: "주민등록번호" },
     { key: "notebookRequired", label: "노트북 지참여부" },
     { key: "appliedAt", label: "신청일" },
+    { key: "waitlisted", label: "신청구분" },
     { key: "completed", label: "상태" },
   ];
   downloadCsvFile(`교육신청자리스트_${toIsoDate(REFERENCE_DATE)}.csv`, columns, rows);
@@ -1882,6 +1950,108 @@ function exportSurveyResultsCsv() {
     { key: "textAnswerCount", label: "서술응답수" },
   ];
   downloadCsvFile(`설문결과이력_${toIsoDate(REFERENCE_DATE)}.csv`, columns, rows);
+}
+
+function exportSurveyResponsesFullCsv() {
+  const normalizedRows = surveyResponses.map((response) => {
+    const surveyForm = getSurveyFormById(response.surveyFormId || "");
+    const orderedQuestionIds = Array.isArray(surveyForm?.questions)
+      ? surveyForm.questions
+        .slice()
+        .sort((left, right) => left.order - right.order)
+        .map((question) => question.id)
+      : [];
+    const answerMap = new Map((response.answers || []).map((answer) => [answer.questionId, answer]));
+    const extraQuestionIds = (response.answers || [])
+      .map((answer) => answer.questionId)
+      .filter((questionId) => !orderedQuestionIds.includes(questionId));
+    const mergedQuestionIds = [...orderedQuestionIds, ...extraQuestionIds];
+    const answers = mergedQuestionIds.map((questionId) => {
+      const answer = answerMap.get(questionId);
+      if (!answer) {
+        return "";
+      }
+      return answer.type === "scale"
+        ? String(answer.value ?? "")
+        : String(answer.value || "").trim();
+    });
+    return {
+      courseName: response.courseName || "-",
+      respondentName: response.respondentName || "-",
+      answers,
+    };
+  });
+
+  const maxItemCount = normalizedRows.reduce((max, row) => Math.max(max, row.answers.length), 0);
+  const columns = [
+    { key: "courseName", label: "교육과정명" },
+    { key: "respondentName", label: "응답자" },
+    ...Array.from({ length: maxItemCount }, (_, index) => ({
+      key: `item${index + 1}`,
+      label: `항목${index + 1}`,
+    })),
+  ];
+  const rows = normalizedRows.map((row) => {
+    const record = {
+      courseName: row.courseName,
+      respondentName: row.respondentName,
+    };
+    for (let index = 0; index < maxItemCount; index += 1) {
+      record[`item${index + 1}`] = row.answers[index] || "";
+    }
+    return record;
+  });
+  downloadCsvFile(`설문응답전체_${toIsoDate(REFERENCE_DATE)}.csv`, columns, rows);
+}
+
+function exportExternalEducationHistoryCsv() {
+  const columns = [
+    { key: "email", label: "이메일" },
+    { key: "company", label: "법인명" },
+    { key: "name", label: "성명" },
+    { key: "courseName", label: "과정명" },
+    { key: "institution", label: "교육기관" },
+    { key: "startDate", label: "시작일" },
+    { key: "endDate", label: "종료일" },
+    { key: "hoursText", label: "교육시간" },
+    { key: "completed", label: "상태" },
+  ];
+  const rows = externalEducationHistories.map((item) => ({
+    email: item.email,
+    company: item.company,
+    name: item.name,
+    courseName: item.courseName,
+    institution: item.institution,
+    startDate: item.startDate,
+    endDate: item.endDate,
+    hoursText: item.hoursText,
+    completed: item.completed ? "수료완료" : "미수료",
+  }));
+  downloadCsvFile(`외부교육이력_${toIsoDate(REFERENCE_DATE)}.csv`, columns, rows);
+}
+
+function exportExternalQualificationHistoryCsv() {
+  const columns = [
+    { key: "email", label: "이메일" },
+    { key: "company", label: "법인명" },
+    { key: "name", label: "성명" },
+    { key: "qualificationName", label: "자격증명" },
+    { key: "grade", label: "등급" },
+    { key: "certificateNo", label: "자격증번호" },
+    { key: "acquiredDate", label: "취득일자" },
+    { key: "status", label: "상태" },
+  ];
+  const rows = externalQualificationHistories.map((item) => ({
+    email: item.email,
+    company: item.company,
+    name: item.name,
+    qualificationName: item.qualificationName,
+    grade: item.grade,
+    certificateNo: item.certificateNo,
+    acquiredDate: item.acquiredDate,
+    status: item.status,
+  }));
+  downloadCsvFile(`외부자격이력_${toIsoDate(REFERENCE_DATE)}.csv`, columns, rows);
 }
 
 async function importProjectsCsv(file) {
@@ -1971,6 +2141,110 @@ async function importEducationSchedulesCsv(file) {
   saveEducationSchedules();
   state.selectedEducationScheduleId = educationSchedules[0]?.id ?? null;
   state.selectedEducationAdminId = educationSchedules[0]?.id ?? null;
+}
+
+async function importEducationEnrollmentsCsv(file) {
+  const text = await readFileAsText(file);
+  const rows = parseCsvText(text);
+  if (!rows.length) {
+    window.alert("업로드할 데이터가 없습니다.");
+    return;
+  }
+
+  const scheduleIdSet = new Set(educationSchedules.map((schedule) => schedule.id));
+  const invalidRows = rows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => !scheduleIdSet.has(String(row["일정ID"] || row.scheduleId || "").trim()));
+  if (invalidRows.length) {
+    window.alert(`교육운영관리 목록에 없는 일정ID가 ${invalidRows.length}건 있습니다. 일정ID를 확인해 주세요.`);
+    return;
+  }
+
+  educationEnrollments = rows.map((row, index) => {
+    const scheduleId = String(row["일정ID"] || row.scheduleId || "").trim();
+    const typeToken = String(row["신청구분"] || row.waitlisted || "").trim().toLowerCase();
+    const completedToken = String(row["상태"] || row.completed || "").trim().toLowerCase();
+    const waitlisted = typeToken
+      ? (typeToken === "대기" || typeToken === "waitlist" || typeToken === "true" || typeToken === "1")
+      : parseBoolean(row.waitlisted, false);
+    const completed = completedToken
+      ? (completedToken === "수료완료" || completedToken === "수료" || completedToken === "완료" || completedToken === "true" || completedToken === "1")
+      : parseBoolean(row.completed, false);
+
+    return normalizeEducationEnrollment({
+      id: row.ID || row.id || `EDU-ENR-${String(index + 1).padStart(3, "0")}`,
+      scheduleId,
+      employeeId: row["사번"] || row.employeeId || "",
+      name: row["성명"] || row.name || "",
+      company: row["법인명"] || row.company || "",
+      department: row["부서"] || row.department || "",
+      position: row["직급"] || row.position || "",
+      email: row["이메일"] || row.email || "",
+      phone: row["휴대전화번호"] || row.phone || "",
+      notebookRequired: row["노트북 지참여부"] || row.notebookRequired || "",
+      residentRegistrationNo: row["주민등록번호"] || row.residentRegistrationNo || "",
+      appliedAt: row["신청일"] || row.appliedAt || toIsoDate(REFERENCE_DATE),
+      waitlisted,
+      completed,
+      satisfaction: row["만족도"] || row.satisfaction || null,
+      certificateNo: row["수료번호"] || row.certificateNo || "",
+    }, `EDU-ENR-${String(index + 1).padStart(3, "0")}`);
+  });
+
+  saveEducationEnrollments();
+}
+
+async function importExternalEducationHistoryCsv(file) {
+  const text = await readFileAsText(file);
+  const rows = parseCsvText(text);
+  if (!rows.length) {
+    window.alert("업로드할 데이터가 없습니다.");
+    return;
+  }
+  externalEducationHistories = rows.map((row, index) => {
+    const completedToken = String(row["상태"] || row.completed || "").trim().toLowerCase();
+    const completed = completedToken === "수료완료" || completedToken === "완료" || completedToken === "true" || completedToken === "1";
+    return normalizeExternalEducationHistory({
+      id: row.ID || row.id || `EXT-EDU-${String(index + 1).padStart(3, "0")}`,
+      email: row["이메일"] || row.email || "",
+      company: row["법인명"] || row.company || "",
+      name: row["성명"] || row.name || "",
+      courseName: row["과정명"] || row.courseName || "",
+      institution: row["교육기관"] || row.institution || "",
+      startDate: row["시작일"] || row.startDate || "",
+      endDate: row["종료일"] || row.endDate || "",
+      hoursText: row["교육시간"] || row.hoursText || "-",
+      completed,
+    }, `EXT-EDU-${String(index + 1).padStart(3, "0")}`);
+  });
+  saveExternalEducationHistories();
+}
+
+async function importExternalQualificationHistoryCsv(file) {
+  const text = await readFileAsText(file);
+  const rows = parseCsvText(text);
+  if (!rows.length) {
+    window.alert("업로드할 데이터가 없습니다.");
+    return;
+  }
+  externalQualificationHistories = rows.map((row, index) => {
+    const statusToken = String(row["상태"] || row.status || "신청완료").trim();
+    const status = statusToken === "합격" || statusToken === "불합격" || statusToken === "신청완료"
+      ? statusToken
+      : "신청완료";
+    return normalizeExternalQualificationHistory({
+      id: row.ID || row.id || `EXT-QL-${String(index + 1).padStart(3, "0")}`,
+      email: row["이메일"] || row.email || "",
+      company: row["법인명"] || row.company || "",
+      name: row["성명"] || row.name || "",
+      qualificationName: row["자격증명"] || row.qualificationName || "",
+      grade: row["등급"] || row.grade || "",
+      certificateNo: row["자격증번호"] || row.certificateNo || "",
+      acquiredDate: row["취득일자"] || row.acquiredDate || "",
+      status,
+    }, `EXT-QL-${String(index + 1).padStart(3, "0")}`);
+  });
+  saveExternalQualificationHistories();
 }
 
 function toIsoDate(date) {
@@ -3124,6 +3398,40 @@ function loadSurveyResponses() {
   }
 }
 
+function loadExternalEducationHistories() {
+  try {
+    const stored = window.localStorage.getItem(EXTERNAL_EDUCATION_HISTORY_STORAGE_KEY);
+    if (!stored) {
+      return [];
+    }
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.map((item, index) =>
+      normalizeExternalEducationHistory(item, `EXT-EDU-${String(index + 1).padStart(3, "0")}`));
+  } catch (error) {
+    return [];
+  }
+}
+
+function loadExternalQualificationHistories() {
+  try {
+    const stored = window.localStorage.getItem(EXTERNAL_QUALIFICATION_HISTORY_STORAGE_KEY);
+    if (!stored) {
+      return [];
+    }
+    const parsed = JSON.parse(stored);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed.map((item, index) =>
+      normalizeExternalQualificationHistory(item, `EXT-QL-${String(index + 1).padStart(3, "0")}`));
+  } catch (error) {
+    return [];
+  }
+}
+
 function saveProjects() {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
@@ -3297,6 +3605,22 @@ function saveSurveyResponses() {
     window.innotrackFirebase?.saveSurveyResponses?.(surveyResponses);
   } catch (error) {
     // ignore remote sync failures and keep local persistence
+  }
+}
+
+function saveExternalEducationHistories() {
+  try {
+    window.localStorage.setItem(EXTERNAL_EDUCATION_HISTORY_STORAGE_KEY, JSON.stringify(externalEducationHistories));
+  } catch (error) {
+    // local fallback only
+  }
+}
+
+function saveExternalQualificationHistories() {
+  try {
+    window.localStorage.setItem(EXTERNAL_QUALIFICATION_HISTORY_STORAGE_KEY, JSON.stringify(externalQualificationHistories));
+  } catch (error) {
+    // local fallback only
   }
 }
 
@@ -3760,7 +4084,52 @@ function getEducationWaitlistLimit(capacity) {
   if (!safeCapacity) {
     return 0;
   }
-  return Math.max(1, Math.floor(safeCapacity * 0.2));
+  return Math.max(1, Math.floor(safeCapacity * 0.5));
+}
+
+function getEducationAverageSatisfaction(scheduleId) {
+  if (!scheduleId) {
+    return null;
+  }
+  const scores = educationEnrollments
+    .filter((enrollment) => enrollment.scheduleId === scheduleId && !enrollment.waitlisted)
+    .map((enrollment) => parseNumber(enrollment.satisfaction, 0))
+    .filter((score) => score > 0);
+  if (!scores.length) {
+    return null;
+  }
+  return Number((scores.reduce((sum, score) => sum + score, 0) / scores.length).toFixed(2));
+}
+
+function promoteEducationWaitlistEnrollments(scheduleId, slots = 1) {
+  if (!scheduleId || !Number.isFinite(Number(slots)) || Number(slots) <= 0) {
+    return 0;
+  }
+  const promoteCount = Math.max(0, Math.floor(Number(slots)));
+  if (!promoteCount) {
+    return 0;
+  }
+
+  const candidates = educationEnrollments
+    .map((enrollment, index) => ({ enrollment, index }))
+    .filter(({ enrollment }) => enrollment.scheduleId === scheduleId && enrollment.waitlisted)
+    .sort((left, right) => {
+      const leftAppliedAt = isValidDateString(left.enrollment.appliedAt) ? left.enrollment.appliedAt : "";
+      const rightAppliedAt = isValidDateString(right.enrollment.appliedAt) ? right.enrollment.appliedAt : "";
+      if (leftAppliedAt !== rightAppliedAt) {
+        return leftAppliedAt.localeCompare(rightAppliedAt);
+      }
+      return String(left.enrollment.id || "").localeCompare(String(right.enrollment.id || ""));
+    })
+    .slice(0, promoteCount);
+
+  candidates.forEach(({ enrollment, index }) => {
+    educationEnrollments[index] = normalizeEducationEnrollment({
+      ...enrollment,
+      waitlisted: false,
+    }, enrollment.id);
+  });
+  return candidates.length;
 }
 
 function isEducationWaitlistOpen(schedule, referenceDate = REFERENCE_DATE) {
@@ -4325,7 +4694,7 @@ function hasEducationApplyAccess() {
 function hasEducationAdminAccess() {
   const identity = getEducationCurrentIdentity();
   const role = normalizeAppRole(identity.role);
-  return role === "education_manager" || role === "super_admin";
+  return role === "education_manager" || role === "qualification_manager" || role === "super_admin";
 }
 
 function hasSystemAdminAccess() {
@@ -4544,10 +4913,17 @@ function syncAllEducationScheduleCostSummaries() {
 
 function getMyLearningEnrollments() {
   const identity = getEducationCurrentIdentity();
+  const identityEmail = String(identity.email || "").trim().toLowerCase();
 
   return educationEnrollments
-    .filter((enrollment) => enrollment.employeeId === identity.employeeId
-      || (enrollment.name === identity.name && enrollment.company === identity.company))
+    .filter((enrollment) => {
+      const enrollmentEmail = String(enrollment.email || "").trim().toLowerCase();
+      if (identityEmail && enrollmentEmail) {
+        return enrollmentEmail === identityEmail;
+      }
+      return enrollment.employeeId === identity.employeeId
+        || (enrollment.name === identity.name && enrollment.company === identity.company);
+    })
     .sort((left, right) => right.appliedAt.localeCompare(left.appliedAt));
 }
 
@@ -4670,7 +5046,11 @@ function cancelEducationScheduleApplication(enrollmentId) {
     return;
   }
 
+  const shouldPromoteWaitlist = !target.waitlisted;
   educationEnrollments.splice(index, 1);
+  if (shouldPromoteWaitlist) {
+    promoteEducationWaitlistEnrollments(target.scheduleId, 1);
+  }
   saveEducationEnrollments();
   render();
 }
@@ -6287,6 +6667,10 @@ function renderEducationCalendarPage() {
           : recruitStatusKey === "closed"
             ? "모집마감"
             : "교육 신청하기";
+  const isWaitlistButtonActive = canWaitlistApply && !alreadyApplied && !applyDisabled;
+  const waitlistNoticeMarkup = isWaitlistButtonActive
+    ? '<small class="education-waitlist-notice">*대기 신청 현황에 따라 과정 추가 개설을 검토합니다.</small>'
+    : "";
   const isApplyFormVisible = state.educationApplyFormScheduleId === selectedSchedule.id && !applyDisabled;
   const positionOptions = ["임원", "수석", "책임", "선임", "사원"];
   const defaultPosition = positionOptions.includes(identity.position) ? identity.position : "";
@@ -6353,7 +6737,7 @@ function renderEducationCalendarPage() {
     <ul class="education-detail-list">
       <li><span>대/중분류</span><strong>${escapeHtml(`${selectedSchedule.majorCategory || selectedCourse?.majorCategory || "-"} · ${selectedSchedule.middleCategory || selectedCourse?.subCategory || "-"}`)}</strong></li>
       <li><span>추천 대상</span><strong>${escapeHtml(selectedSchedule.recommendedTarget || selectedCourse?.recommendedFor || selectedCourse?.targetLevel || "-")}</strong></li>
-      <li><span>신청인원/정원</span><strong>${escapeHtml(`${confirmedEnrollmentCount}/${capacity}`)}</strong></li>
+      <li><span>신청인원/정원</span><strong>${escapeHtml(`${confirmedEnrollmentCount}명/${capacity}명`)}</strong></li>
       <li><span>현재 대기자 수</span><strong>${escapeHtml(`${waitlistCount}명${waitlistLimit ? ` / ${waitlistLimit}명` : ""}`)}</strong></li>
       <li><span>교육 시간</span><strong>${escapeHtml(durationLabel)}</strong></li>
       <li><span>일정</span><strong>${escapeHtml(getEducationDateRangeLabel(selectedSchedule.startDate, selectedSchedule.endDate))}</strong></li>
@@ -6367,6 +6751,7 @@ function renderEducationCalendarPage() {
       data-education-apply-toggle="${selectedSchedule.id}"
       ${applyDisabled ? "disabled" : ""}
     >${applyLabel}</button>
+    ${waitlistNoticeMarkup}
     ${applyFormMarkup}
   `;
 }
@@ -6444,12 +6829,16 @@ function upsertSurveyResponse(responsePayload) {
 }
 
 function renderMyLearningPage() {
-  if (!elements.myLearningTableBody || !elements.myLearningUpcomingList || !elements.myLearningEvaluationPanel) {
+  if (!elements.myLearningTableBody
+    || !elements.myLearningCertificationTableBody
+    || !elements.myLearningUpcomingList
+    || !elements.myLearningEvaluationPanel) {
     return;
   }
 
   const myEnrollments = getMyLearningEnrollments();
   const identity = getEducationCurrentIdentity();
+  const identityEmail = String(identity.email || "").trim().toLowerCase();
   const referenceToken = toIsoDate(REFERENCE_DATE);
   const isCancelableInPeriod = (startDate, endDate) => (
     isValidDateString(startDate)
@@ -6476,33 +6865,68 @@ function renderMyLearningPage() {
       surveyResponse,
       hoursText,
       hoursValue,
+      isExternal: false,
     };
   });
+  const externalEducationRows = externalEducationHistories
+    .filter((item) => {
+      const itemEmail = String(item.email || "").trim().toLowerCase();
+      if (identityEmail && itemEmail) {
+        return itemEmail === identityEmail;
+      }
+      return item.name === identity.name && item.company === identity.company;
+    })
+    .map((item) => ({
+      enrollment: {
+        id: item.id,
+        completed: Boolean(item.completed),
+        waitlisted: false,
+      },
+      schedule: {
+        startDate: item.startDate,
+        endDate: item.endDate,
+        note: item.institution || "",
+      },
+      course: null,
+      status: item.completed ? { key: "completed", label: "수료" } : { key: "applied", label: "신청완료" },
+      surveyResponse: null,
+      hoursText: item.hoursText || "-",
+      hoursValue: parseEducationAdminHoursCount(item.hoursText || ""),
+      isExternal: true,
+      externalCourseName: item.courseName || "외부교육",
+    }));
+  const allEducationRows = [...rows, ...externalEducationRows]
+    .sort((left, right) => String(right.schedule?.endDate || "").localeCompare(String(left.schedule?.endDate || "")));
   const examRows = certificationExamApplications
     .filter((application) => (
-      application.employeeId === identity.employeeId
-      || (application.name === identity.name && application.company === identity.company)
+      ((identityEmail && String(application.email || "").trim().toLowerCase() === identityEmail)
+      || application.employeeId === identity.employeeId
+      || (application.name === identity.name && application.company === identity.company))
     ))
     .map((application) => {
       const exam = getCertificationExamById(application.examId);
       const examDate = String(exam?.examDateTime || "").slice(0, 10);
-      const examTitle = exam?.examTitle || `${exam?.examType || "시험"} ${exam?.examGrade || ""}`.trim() || "시험";
       const applicationStartDate = isValidDateString(exam?.applicationStartDate) ? exam.applicationStartDate : examDate;
       const applicationEndDate = isValidDateString(exam?.applicationEndDate) ? exam.applicationEndDate : applicationStartDate;
+      const isPassed = Boolean(application.completed);
+      const isFailed = !isPassed && isValidDateString(examDate) && referenceToken > examDate;
+      const statusLabel = isPassed ? "합격" : (isFailed ? "불합격" : "신청완료");
+      const statusClass = isPassed ? "is-completed" : (isFailed ? "is-failed" : "is-applied");
       return {
         kind: "exam",
         id: application.id,
-        title: examTitle,
-        periodLabel: examDate ? formatDateWithYear(examDate) : "-",
-        hoursText: "-",
-        completionLabel: application.completed ? "응시완료" : "신청완료",
-        completionClass: application.completed ? "is-completed" : "is-incomplete",
-        canCancel: !application.completed && isCancelableInPeriod(applicationStartDate, applicationEndDate),
+        qualificationType: exam?.examType || "-",
+        grade: exam?.examGrade || "-",
+        certificateNo: application.certificateNo || "-",
+        acquiredDate: application.acquiredDate ? formatDateWithYear(application.acquiredDate) : "-",
+        statusLabel,
+        statusClass,
+        canCancel: statusLabel === "신청완료" && isCancelableInPeriod(applicationStartDate, applicationEndDate),
       };
     });
 
   const currentYear = String(REFERENCE_DATE.getFullYear());
-  const currentYearRows = rows.filter((row) => {
+  const currentYearRows = allEducationRows.filter((row) => {
     const scheduleYear = String(row.schedule?.endDate || row.schedule?.startDate || "").slice(0, 4);
     return scheduleYear === currentYear;
   });
@@ -6510,7 +6934,7 @@ function renderMyLearningPage() {
   const inProgressRows = currentYearRows.filter((row) => !row.enrollment.completed && row.schedule?.status === "in_progress");
   const yearlyCompletedHours = completedRows
     .reduce((sum, row) => sum + row.hoursValue, 0);
-  const totalTrainingHours = rows.reduce((sum, row) => sum + row.hoursValue, 0);
+  const totalTrainingHours = allEducationRows.reduce((sum, row) => sum + row.hoursValue, 0);
 
   if (elements.myLearningMetricApplied) {
     elements.myLearningMetricApplied.textContent = String(currentYearRows.length);
@@ -6541,30 +6965,18 @@ function renderMyLearningPage() {
     }
   }
 
-  if (!rows.length && !examRows.length) {
-    elements.myLearningTableBody.innerHTML = `
-      <tr>
-        <td colspan="6" class="empty-state">신청한 교육 과정이 없습니다. 교육/시험일정에서 원하는 과정을 신청해 주세요.</td>
-      </tr>
-    `;
-    elements.myLearningUpcomingList.innerHTML = '<div class="empty-state">다가오는 일정이 없습니다.</div>';
-    elements.myLearningEvaluationPanel.hidden = true;
-    state.myLearningEvaluationEnrollmentId = null;
-    return;
-  }
-
   if (!rows.some((row) => row.enrollment.id === state.myLearningEvaluationEnrollmentId)) {
     state.myLearningEvaluationEnrollmentId = null;
   }
 
-  const learningRowsHtml = [
-    ...rows.map((row) => {
+  const learningRowsHtml = allEducationRows.map((row) => {
       const completionLabel = row.enrollment.completed ? "수료완료" : "미수료";
       const completionClass = row.enrollment.completed ? "is-completed" : "is-incomplete";
+      const isWaitlisted = Boolean(row.enrollment.waitlisted) || row.isExternal;
       const isEvaluationCompleted = Boolean(row.surveyResponse) || Number(row.enrollment.satisfaction) > 0;
       const evaluationButtonLabel = isEvaluationCompleted ? "평가완료" : "평가";
       const isSelectedEvaluation = row.enrollment.id === state.myLearningEvaluationEnrollmentId;
-      const canCancel = !row.enrollment.completed && isCancelableInPeriod(
+      const canCancel = !row.isExternal && !row.enrollment.completed && isCancelableInPeriod(
         row.schedule?.applicationStartDate,
         row.schedule?.applicationEndDate,
       );
@@ -6574,58 +6986,91 @@ function renderMyLearningPage() {
 
       return `
         <tr>
-          <td>${escapeHtml(getEducationAdminDisplayCourseName(row.schedule || {}, row.course))}</td>
+          <td>${escapeHtml(row.isExternal ? row.externalCourseName : getEducationAdminDisplayCourseName(row.schedule || {}, row.course))}</td>
           <td>${escapeHtml(row.schedule ? getEducationDateRangeLabel(row.schedule.startDate, row.schedule.endDate) : "-")}</td>
           <td class="learning-hours-cell">${escapeHtml(row.hoursText)}</td>
           <td><span class="learning-status-badge ${completionClass}">${escapeHtml(completionLabel)}</span></td>
           <td>
             <div class="learning-evaluation-cell">
-              <button
+              ${isWaitlisted
+    ? '<span class="learning-cancel-disabled">-</span>'
+    : `<button
                 type="button"
                 class="outline-button learning-evaluate-button ${isSelectedEvaluation ? "is-active" : ""} ${isEvaluationCompleted ? "is-complete" : ""}"
                 data-learning-evaluate="${row.enrollment.id}"
                 ${isEvaluationCompleted ? "disabled" : ""}
-              >${evaluationButtonLabel}</button>
+              >${evaluationButtonLabel}</button>`}
             </div>
           </td>
           <td class="learning-cancel-cell">${cancelCellMarkup}</td>
         </tr>
       `;
-    }),
-    ...examRows.map((row) => {
+    })
+    .join("");
+  elements.myLearningTableBody.innerHTML = allEducationRows.length
+    ? `${learningRowsHtml}
+      <tr class="learning-summary-row">
+        <td colspan="3"><strong>교육시간 합계</strong></td>
+        <td class="learning-hours-cell"><strong>${escapeHtml(`${totalTrainingHours}시간`)}</strong></td>
+        <td colspan="2" class="learning-summary-note"></td>
+      </tr>
+    `
+    : `
+      <tr>
+        <td colspan="6" class="empty-state">신청한 교육 과정이 없습니다. 교육일정에서 원하는 과정을 신청해 주세요.</td>
+      </tr>
+    `;
+
+  const externalQualificationRows = externalQualificationHistories
+    .filter((item) => {
+      const itemEmail = String(item.email || "").trim().toLowerCase();
+      if (identityEmail && itemEmail) {
+        return itemEmail === identityEmail;
+      }
+      return item.name === identity.name && item.company === identity.company;
+    })
+    .map((item) => ({
+      id: item.id,
+      qualificationType: item.qualificationName || "-",
+      grade: item.grade || "-",
+      certificateNo: item.certificateNo || "-",
+      acquiredDate: item.acquiredDate ? formatDateWithYear(item.acquiredDate) : "-",
+      statusLabel: item.status || "신청완료",
+      statusClass: item.status === "합격" ? "is-completed" : (item.status === "불합격" ? "is-failed" : "is-applied"),
+      canCancel: false,
+    }));
+  const combinedQualificationRows = [...examRows, ...externalQualificationRows];
+  const certificationRowsHtml = combinedQualificationRows
+    .map((row) => {
       const cancelCellMarkup = row.canCancel
         ? `<button type="button" class="ghost-button learning-cancel-button" data-learning-cancel="exam:${row.id}">취소</button>`
-        : (row.completionLabel === "신청완료" ? '<span class="learning-cancel-disabled">취소불가</span>' : '<span class="learning-cancel-disabled">-</span>');
+        : (row.statusLabel === "신청완료" ? '<span class="learning-cancel-disabled">취소불가</span>' : '<span class="learning-cancel-disabled">-</span>');
       return `
         <tr>
-          <td>${escapeHtml(row.title)}</td>
-          <td>${escapeHtml(row.periodLabel)}</td>
-          <td class="learning-hours-cell">${escapeHtml(row.hoursText)}</td>
-          <td><span class="learning-status-badge ${row.completionClass}">${escapeHtml(row.completionLabel)}</span></td>
-          <td>
-            <div class="learning-evaluation-cell">
-              <span class="learning-evaluate-placeholder">-</span>
-            </div>
-          </td>
+          <td>${escapeHtml(row.qualificationType)}</td>
+          <td>${escapeHtml(row.grade)}</td>
+          <td>${escapeHtml(row.certificateNo)}</td>
+          <td>${escapeHtml(row.acquiredDate)}</td>
+          <td><span class="learning-status-badge ${row.statusClass}">${escapeHtml(row.statusLabel)}</span></td>
           <td class="learning-cancel-cell">${cancelCellMarkup}</td>
         </tr>
       `;
-    }),
-  ]
+    })
     .join("");
-  elements.myLearningTableBody.innerHTML = `${learningRowsHtml}
-    <tr class="learning-summary-row">
-      <td colspan="3"><strong>교육시간 합계</strong></td>
-      <td class="learning-hours-cell"><strong>${escapeHtml(`${totalTrainingHours}시간`)}</strong></td>
-      <td colspan="2" class="learning-summary-note"></td>
-    </tr>
-  `;
+  elements.myLearningCertificationTableBody.innerHTML = combinedQualificationRows.length
+    ? certificationRowsHtml
+    : `
+      <tr>
+        <td colspan="6" class="empty-state">신청한 자격시험 이력이 없습니다.</td>
+      </tr>
+    `;
 
   if (!state.myLearningEvaluationEnrollmentId) {
     elements.myLearningEvaluationPanel.hidden = true;
   } else {
     const selectedRow = rows.find((row) => row.enrollment.id === state.myLearningEvaluationEnrollmentId) || null;
-    if (!selectedRow) {
+    if (!selectedRow || selectedRow.enrollment.waitlisted) {
+      state.myLearningEvaluationEnrollmentId = null;
       elements.myLearningEvaluationPanel.hidden = true;
     } else {
       const scheduleSurveyFormId = selectedRow.schedule?.surveyFormId || "";
@@ -7439,6 +7884,10 @@ function renderEducationEnrollmentBoard(filteredRows = []) {
         enrollment,
         schedule,
         courseName: schedule ? getEducationAdminDisplayCourseName(schedule, course) : "삭제된 강의",
+        enrollmentTypeLabel: enrollment.waitlisted ? "대기" : "일반",
+        notebookRequiredMark: enrollment.notebookRequired === "개인노트북 지참"
+          ? "O"
+          : (enrollment.notebookRequired ? "X" : "-"),
       };
     })
     .filter((row) => {
@@ -7446,6 +7895,7 @@ function renderEducationEnrollmentBoard(filteredRows = []) {
         || (selectedSchedule ? row.enrollment.scheduleId === selectedSchedule.id : false);
       const matchesSearch = !searchToken || [
         row.courseName,
+        row.enrollmentTypeLabel,
         row.enrollment.company,
         row.enrollment.department,
         row.enrollment.name,
@@ -7457,7 +7907,18 @@ function renderEducationEnrollmentBoard(filteredRows = []) {
         .includes(searchToken);
       return matchesScope && matchesSearch;
     })
-    .sort((left, right) => right.enrollment.appliedAt.localeCompare(left.enrollment.appliedAt));
+    .sort((left, right) => {
+      const dateCompare = String(right.enrollment.appliedAt || "").localeCompare(String(left.enrollment.appliedAt || ""));
+      if (dateCompare !== 0) {
+        return dateCompare;
+      }
+      const rightIdNumeric = Number(String(right.enrollment.id || "").split("-").pop());
+      const leftIdNumeric = Number(String(left.enrollment.id || "").split("-").pop());
+      if (Number.isFinite(rightIdNumeric) && Number.isFinite(leftIdNumeric) && rightIdNumeric !== leftIdNumeric) {
+        return rightIdNumeric - leftIdNumeric;
+      }
+      return String(right.enrollment.id || "").localeCompare(String(left.enrollment.id || ""));
+    });
   const visibleIdSet = new Set(rows.map((row) => row.enrollment.id));
   state.selectedEducationEnrollmentIds = getSelectedEducationEnrollmentIds()
     .filter((id) => visibleIdSet.has(id));
@@ -7482,7 +7943,7 @@ function renderEducationEnrollmentBoard(filteredRows = []) {
     state.selectedEducationEnrollmentIds = [];
     elements.educationEnrollmentTableBody.innerHTML = `
       <tr>
-        <td colspan="9" class="empty-state">표시할 신청 정보가 없습니다. 강의를 선택하거나 전체 강의로 조회해 주세요.</td>
+        <td colspan="11" class="empty-state">표시할 신청 정보가 없습니다. 강의를 선택하거나 전체 강의로 조회해 주세요.</td>
       </tr>
     `;
     return;
@@ -7516,7 +7977,8 @@ function renderEducationEnrollmentBoard(filteredRows = []) {
         <td title="${escapeHtml(row.enrollment.phone || "-")}">${escapeHtml(row.enrollment.phone || "-")}</td>
         <td title="${escapeHtml(row.enrollment.email || "-")}">${escapeHtml(row.enrollment.email || "-")}</td>
         <td title="${escapeHtml(row.enrollment.residentRegistrationNo || "-")}">${escapeHtml(row.enrollment.residentRegistrationNo || "-")}</td>
-        <td title="${escapeHtml(row.enrollment.notebookRequired || "-")}">${escapeHtml(row.enrollment.notebookRequired || "-")}</td>
+        <td title="${escapeHtml(row.enrollment.notebookRequired || "-")}">${escapeHtml(row.notebookRequiredMark)}</td>
+        <td title="${escapeHtml(row.enrollmentTypeLabel)}">${escapeHtml(row.enrollmentTypeLabel)}</td>
         <td title="${escapeHtml(formatDateWithYear(row.enrollment.appliedAt))}">${escapeHtml(formatDateWithYear(row.enrollment.appliedAt))}</td>
         <td title="${row.enrollment.completed ? "수료완료" : "미수료"}">${row.enrollment.completed ? "수료완료" : "미수료"}</td>
       </tr>
@@ -7617,7 +8079,16 @@ function cancelSelectedEducationEnrollments() {
     return;
   }
 
+  const removedConfirmedBySchedule = educationEnrollments.reduce((acc, enrollment) => {
+    if (targetIds.includes(enrollment.id) && !enrollment.waitlisted) {
+      acc[enrollment.scheduleId] = (acc[enrollment.scheduleId] || 0) + 1;
+    }
+    return acc;
+  }, {});
   educationEnrollments = educationEnrollments.filter((item) => !targetIds.includes(item.id));
+  Object.entries(removedConfirmedBySchedule).forEach(([scheduleId, count]) => {
+    promoteEducationWaitlistEnrollments(scheduleId, count);
+  });
   state.selectedEducationEnrollmentIds = [];
   saveEducationEnrollments();
   render();
@@ -7769,9 +8240,11 @@ function renderEducationAdminDetailCard(filteredRows = []) {
   const { schedule } = selectedRow;
   const statusInfo = getEducationAdminListStatusInfo(schedule.status);
   const capacity = Math.max(0, parseNumber(schedule.capacity, 0));
-  const attendees = educationEnrollments.filter((enrollment) => enrollment.scheduleId === schedule.id).length;
+  const attendees = getEducationConfirmedEnrollmentCount(schedule.id);
+  const waitlistCount = getEducationWaitlistCount(schedule.id);
+  const waitlistLimit = getEducationWaitlistLimit(capacity);
   const completedCount = educationEnrollments.filter((enrollment) =>
-    enrollment.scheduleId === schedule.id && enrollment.completed).length;
+    enrollment.scheduleId === schedule.id && !enrollment.waitlisted && enrollment.completed).length;
   const completionRate = attendees > 0 ? Math.round((completedCount / attendees) * 100) : 0;
   const refundRate = parseNumber(schedule.totalCost, 0) > 0
     ? Math.round((parseNumber(schedule.refundAmount, 0) / parseNumber(schedule.totalCost, 0)) * 100)
@@ -7779,7 +8252,12 @@ function renderEducationAdminDetailCard(filteredRows = []) {
   const educationTime = selectedRow.daysText && selectedRow.hoursText
     ? `${selectedRow.daysText} / ${selectedRow.hoursText}`
     : (selectedRow.hoursText || selectedRow.daysText || "-");
-  const averageScore = schedule.avgScore ? `${Number(schedule.avgScore).toFixed(2)}점` : "-";
+  const measuredAverageScore = getEducationAverageSatisfaction(schedule.id);
+  const fallbackAverageScore = Number(parseNumber(schedule.avgScore, 0)) > 0
+    ? Number(parseNumber(schedule.avgScore, 0))
+    : null;
+  const averageScoreValue = measuredAverageScore ?? fallbackAverageScore;
+  const averageScore = averageScoreValue != null ? `${averageScoreValue.toFixed(2)}점` : "-";
   const recruitStatusKey = getEducationRecruitStatusKey(schedule);
   const recruitStatusLabel = getEducationRecruitStatusLabel(schedule);
   const surveyFormName = getSurveyFormById(schedule.surveyFormId)?.name || "기본 설문";
@@ -7796,7 +8274,10 @@ function renderEducationAdminDetailCard(filteredRows = []) {
     <div class="detail-grid">
       <div class="detail-metric">
         <span>신청인원/정원</span>
-        <strong>${escapeHtml(`${attendees}/${capacity}`)}</strong>
+        <strong>
+          ${escapeHtml(`${attendees}명/${capacity}명`)}
+          <span class="detail-metric-subvalue">${escapeHtml(`대기 ${waitlistCount}/${waitlistLimit}`)}</span>
+        </strong>
       </div>
       <div class="detail-metric">
         <span>평균만족도</span>
@@ -9216,7 +9697,7 @@ function canEditOrDeleteTaskProject(project) {
 function hasQualificationManagementAccess() {
   const profile = window.innotrackFirebase?.getCurrentUserProfile?.();
   const role = normalizeAppRole(profile?.role);
-  return role === "education_manager" || role === "super_admin";
+  return role === "education_manager" || role === "qualification_manager" || role === "super_admin";
 }
 
 function syncTaskActionButtons(filteredProjects) {
@@ -9893,9 +10374,6 @@ function bindEvents() {
         cancelEducationScheduleApplication(recordId);
         return;
       }
-      if (type === "exam") {
-        cancelCertificationExamApplication(recordId);
-      }
       return;
     }
 
@@ -9908,11 +10386,31 @@ function bindEvents() {
     if (!enrollmentId) {
       return;
     }
+    const targetEnrollment = educationEnrollments.find((item) => item.id === enrollmentId);
+    if (!targetEnrollment || targetEnrollment.waitlisted) {
+      return;
+    }
 
     state.myLearningEvaluationEnrollmentId = state.myLearningEvaluationEnrollmentId === enrollmentId
       ? null
       : enrollmentId;
     render();
+  });
+
+  elements.myLearningCertificationTableBody?.addEventListener("click", (event) => {
+    const cancelButton = event.target.closest("[data-learning-cancel]");
+    if (!cancelButton) {
+      return;
+    }
+    const cancelToken = cancelButton.getAttribute("data-learning-cancel");
+    if (!cancelToken) {
+      return;
+    }
+    const [type, recordId] = cancelToken.split(":");
+    if (type !== "exam" || !recordId) {
+      return;
+    }
+    cancelCertificationExamApplication(recordId);
   });
 
   elements.myLearningEvaluationPanel?.addEventListener("click", (event) => {
@@ -9965,6 +10463,12 @@ function bindEvents() {
     }
     const targetIndex = educationEnrollments.findIndex((item) => item.id === enrollmentId);
     if (targetIndex < 0) {
+      return;
+    }
+    if (educationEnrollments[targetIndex].waitlisted) {
+      window.alert("대기 신청자는 만족도 평가 대상이 아닙니다.");
+      state.myLearningEvaluationEnrollmentId = null;
+      render();
       return;
     }
     if (Number(educationEnrollments[targetIndex].satisfaction) > 0) {
@@ -10277,9 +10781,12 @@ function bindEvents() {
   elements.adminExportQualificationsButton?.addEventListener("click", exportQualificationsCsv);
   elements.adminExportEducationSchedulesButton?.addEventListener("click", exportEducationSchedulesCsv);
   elements.adminExportEducationEnrollmentsButton?.addEventListener("click", exportEducationEnrollmentsCsv);
+  elements.adminExportExternalEducationHistoryButton?.addEventListener("click", exportExternalEducationHistoryCsv);
+  elements.adminExportExternalQualificationHistoryButton?.addEventListener("click", exportExternalQualificationHistoryCsv);
   elements.adminExportEducationFeedbackButton?.addEventListener("click", exportEducationFeedbackCsv);
   elements.adminExportEducationCostsButton?.addEventListener("click", exportEducationCostDetailsCsv);
   elements.adminExportSurveyResultsButton?.addEventListener("click", exportSurveyResultsCsv);
+  elements.adminExportSurveyResponsesFullButton?.addEventListener("click", exportSurveyResponsesFullCsv);
 
   elements.adminImportProjectsButton?.addEventListener("click", () => {
     elements.adminImportProjectsFile?.click();
@@ -10289,6 +10796,15 @@ function bindEvents() {
   });
   elements.adminImportEducationSchedulesButton?.addEventListener("click", () => {
     elements.adminImportEducationSchedulesFile?.click();
+  });
+  elements.adminImportEducationEnrollmentsButton?.addEventListener("click", () => {
+    elements.adminImportEducationEnrollmentsFile?.click();
+  });
+  elements.adminImportExternalEducationHistoryButton?.addEventListener("click", () => {
+    elements.adminImportExternalEducationHistoryFile?.click();
+  });
+  elements.adminImportExternalQualificationHistoryButton?.addEventListener("click", () => {
+    elements.adminImportExternalQualificationHistoryFile?.click();
   });
 
   elements.adminImportProjectsFile?.addEventListener("change", async (event) => {
@@ -10337,6 +10853,54 @@ function bindEvents() {
       window.alert("교육운영관리 CSV 업로드가 완료되었습니다.");
     } catch (error) {
       window.alert("교육운영관리 CSV 업로드에 실패했습니다.");
+    } finally {
+      input.value = "";
+    }
+  });
+  elements.adminImportEducationEnrollmentsFile?.addEventListener("change", async (event) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      await importEducationEnrollmentsCsv(file);
+      render();
+      window.alert("교육 신청자리스트 CSV 업로드가 완료되었습니다.");
+    } catch (error) {
+      window.alert("교육 신청자리스트 CSV 업로드에 실패했습니다.");
+    } finally {
+      input.value = "";
+    }
+  });
+  elements.adminImportExternalEducationHistoryFile?.addEventListener("change", async (event) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      await importExternalEducationHistoryCsv(file);
+      render();
+      window.alert("외부교육 이력 CSV 업로드가 완료되었습니다.");
+    } catch (error) {
+      window.alert("외부교육 이력 CSV 업로드에 실패했습니다.");
+    } finally {
+      input.value = "";
+    }
+  });
+  elements.adminImportExternalQualificationHistoryFile?.addEventListener("change", async (event) => {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      await importExternalQualificationHistoryCsv(file);
+      render();
+      window.alert("외부자격 이력 CSV 업로드가 완료되었습니다.");
+    } catch (error) {
+      window.alert("외부자격 이력 CSV 업로드에 실패했습니다.");
     } finally {
       input.value = "";
     }
