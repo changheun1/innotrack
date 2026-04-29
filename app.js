@@ -20,7 +20,7 @@ const MS_PER_DAY = 1000 * 60 * 60 * 24;
 const TASK_ROWS_PER_PAGE = 14;
 const QUALIFICATION_ROWS_PER_PAGE = 14;
 const EDUCATION_ADMIN_ROWS_PER_PAGE = 11;
-const SURVEY_RESULT_ROWS_PER_PAGE = 8;
+const SURVEY_RESULT_ROWS_PER_PAGE = 20;
 
 const companyOptions = [
   "에이텍",
@@ -1045,8 +1045,7 @@ const state = {
   myLearningYear: "all",
   selectedSurveyFormId: surveyForms[0]?.id ?? null,
   surveyQuestionDraftType: "scale",
-  surveyResultMajorFilter: "all",
-  surveyResultMiddleFilter: "all",
+  surveyResultYearFilter: "all",
   surveyResultSmallSearch: "",
   surveyResultPage: 1,
   educationAdminPage: 1,
@@ -1058,6 +1057,7 @@ const state = {
   editingQualificationId: null,
   selectedCertificationExamId: certificationExams[0]?.id ?? null,
   selectedCertificationExamIds: [],
+  guestRestrictedActive: false,
   certificationExamModalMode: "create",
   editingCertificationExamId: null,
   selectedAdminNoticeId: dashboardNoticeItems[0]?.id ?? null,
@@ -1095,6 +1095,7 @@ const elements = {
   educationNavParent: document.querySelector('[data-nav-group-toggle="education"]'),
   familySiteSelect: document.querySelector("#family-site-select"),
   pageViews: Array.from(document.querySelectorAll("[data-page-view]")),
+  guestAccessOverlay: document.querySelector("#guest-access-overlay"),
   metricTotal: document.querySelector("#metric-total"),
   metricOnTrack: document.querySelector("#metric-on-track"),
   metricDelay: document.querySelector("#metric-delay"),
@@ -1292,8 +1293,7 @@ const elements = {
   surveyQuestionText: document.querySelector("#survey-question-text"),
   surveyQuestionTableBody: document.querySelector("#survey-question-table-body"),
   surveyResultTableBody: document.querySelector("#survey-result-table-body"),
-  surveyResultMajorFilter: document.querySelector("#survey-result-major-filter"),
-  surveyResultMiddleFilter: document.querySelector("#survey-result-middle-filter"),
+  surveyResultYearFilter: document.querySelector("#survey-result-year-filter"),
   surveyResultSmallSearch: document.querySelector("#survey-result-small-search"),
   surveyResultSmallOptions: document.querySelector("#survey-result-small-options"),
   surveyResultPagination: document.querySelector("#survey-result-pagination"),
@@ -5091,6 +5091,33 @@ function hasSystemAdminAccess() {
   const identity = getEducationCurrentIdentity();
   const role = normalizeAppRole(identity.role);
   return role === "super_admin";
+}
+
+function hasGuestRestrictedAccess() {
+  const profile = window.innotrackFirebase?.getCurrentUserProfile?.() || null;
+  const role = normalizeAppRole(profile?.role);
+  return role === "guest";
+}
+
+function syncGuestRestrictedUi() {
+  const isRestricted = hasGuestRestrictedAccess();
+  if (elements.guestAccessOverlay) {
+    elements.guestAccessOverlay.hidden = !isRestricted;
+  }
+  elements.navItems.forEach((button) => {
+    button.disabled = isRestricted;
+    button.classList.toggle("is-disabled", isRestricted);
+  });
+  if (isRestricted) {
+    elements.pageViews.forEach((view) => {
+      view.hidden = true;
+      view.classList.remove("is-active");
+    });
+  } else if (state.guestRestrictedActive) {
+    setActivePage(state.activePage || "dashboard");
+  }
+  state.guestRestrictedActive = isRestricted;
+  return isRestricted;
 }
 
 function getEducationMonthCursorDate() {
@@ -9183,8 +9210,7 @@ function renderSurveyManagementPage() {
     || !elements.surveyManagementWorkspace
     || !elements.surveyQuestionTableBody
     || !elements.surveyResultTableBody
-    || !elements.surveyResultMajorFilter
-    || !elements.surveyResultMiddleFilter
+    || !elements.surveyResultYearFilter
     || !elements.surveyResultSmallSearch
     || !elements.surveyResultSmallOptions
     || !elements.surveyResultPagination) {
@@ -9275,38 +9301,8 @@ function renderSurveyManagementPage() {
         smallCategory,
       };
     });
-  const majorOptions = Array.from(new Set(resultRows.map((item) => item.majorCategory).filter(Boolean)))
-    .sort((left, right) => left.localeCompare(right, "ko-KR"));
-  if (state.surveyResultMajorFilter !== "all" && !majorOptions.includes(state.surveyResultMajorFilter)) {
-    state.surveyResultMajorFilter = "all";
-  }
-  elements.surveyResultMajorFilter.innerHTML = [
-    '<option value="all">전체</option>',
-    ...majorOptions.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`),
-  ].join("");
-  elements.surveyResultMajorFilter.value = state.surveyResultMajorFilter;
-
-  const middleOptions = Array.from(new Set(
-    resultRows
-      .filter((item) => state.surveyResultMajorFilter === "all" || item.majorCategory === state.surveyResultMajorFilter)
-      .map((item) => item.middleCategory)
-      .filter(Boolean),
-  )).sort((left, right) => left.localeCompare(right, "ko-KR"));
-  if (state.surveyResultMiddleFilter !== "all" && !middleOptions.includes(state.surveyResultMiddleFilter)) {
-    state.surveyResultMiddleFilter = "all";
-  }
-  elements.surveyResultMiddleFilter.innerHTML = [
-    '<option value="all">전체</option>',
-    ...middleOptions.map((option) => `<option value="${escapeHtml(option)}">${escapeHtml(option)}</option>`),
-  ].join("");
-  elements.surveyResultMiddleFilter.value = state.surveyResultMiddleFilter;
-
   const smallOptions = Array.from(new Set(
     resultRows
-      .filter((item) => (
-        (state.surveyResultMajorFilter === "all" || item.majorCategory === state.surveyResultMajorFilter)
-        && (state.surveyResultMiddleFilter === "all" || item.middleCategory === state.surveyResultMiddleFilter)
-      ))
       .map((item) => item.smallCategory)
       .filter(Boolean),
   ))
@@ -9318,9 +9314,22 @@ function renderSurveyManagementPage() {
     .map((option) => `<option value="${escapeHtml(option)}"></option>`)
     .join("");
 
+  const yearOptions = Array.from(new Set(
+    resultRows
+      .map((item) => String(item.response?.submittedAt || "").slice(0, 4))
+      .filter((year) => /^\d{4}$/.test(year)),
+  )).sort((left, right) => right.localeCompare(left));
+  if (state.surveyResultYearFilter !== "all" && !yearOptions.includes(state.surveyResultYearFilter)) {
+    state.surveyResultYearFilter = "all";
+  }
+  elements.surveyResultYearFilter.innerHTML = [
+    '<option value="all">전체</option>',
+    ...yearOptions.map((year) => `<option value="${escapeHtml(year)}">${escapeHtml(`${year}년`)}</option>`),
+  ].join("");
+  elements.surveyResultYearFilter.value = state.surveyResultYearFilter;
+
   const filteredResultRows = resultRows.filter((item) => (
-    (state.surveyResultMajorFilter === "all" || item.majorCategory === state.surveyResultMajorFilter)
-    && (state.surveyResultMiddleFilter === "all" || item.middleCategory === state.surveyResultMiddleFilter)
+    (state.surveyResultYearFilter === "all" || String(item.response?.submittedAt || "").startsWith(`${state.surveyResultYearFilter}-`))
     && (!state.surveyResultSmallSearch || item.smallCategory.toLowerCase().includes(state.surveyResultSmallSearch.toLowerCase()))
   ));
 
@@ -11822,23 +11831,8 @@ function bindEvents() {
     state.surveyQuestionDraftType = event.target.value === "text" ? "text" : "scale";
   });
 
-  elements.surveyResultMajorFilter?.addEventListener("change", (event) => {
-    state.surveyResultMajorFilter = String(event.target.value || "all");
-    state.surveyResultMiddleFilter = "all";
-    state.surveyResultSmallSearch = "";
-    if (elements.surveyResultSmallSearch) {
-      elements.surveyResultSmallSearch.value = "";
-    }
-    state.surveyResultPage = 1;
-    render();
-  });
-
-  elements.surveyResultMiddleFilter?.addEventListener("change", (event) => {
-    state.surveyResultMiddleFilter = String(event.target.value || "all");
-    state.surveyResultSmallSearch = "";
-    if (elements.surveyResultSmallSearch) {
-      elements.surveyResultSmallSearch.value = "";
-    }
+  elements.surveyResultYearFilter?.addEventListener("change", (event) => {
+    state.surveyResultYearFilter = String(event.target.value || "all");
     state.surveyResultPage = 1;
     render();
   });
@@ -12189,6 +12183,9 @@ function bindEvents() {
 
 function render() {
   syncEducationAdminMenuVisibility();
+  if (syncGuestRestrictedUi()) {
+    return;
+  }
   renderProjectYearFilterOptions();
   renderQualificationYearFilterOptions();
   renderQualificationTypeFilterOptions();

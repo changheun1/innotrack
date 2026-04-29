@@ -2139,6 +2139,45 @@ button {
   text-align: left !important;
 }
 
+.guest-access-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(244, 248, 255, 0.94);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.guest-access-overlay-card {
+  width: min(560px, 100%);
+  border-radius: 18px;
+  border: 1px solid rgba(59, 110, 190, 0.2);
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(25, 54, 98, 0.14);
+  padding: 24px 24px 22px;
+  text-align: center;
+}
+
+.guest-access-overlay-card h3 {
+  margin: 6px 0 8px;
+  color: #10396c;
+}
+
+.guest-access-overlay-card p {
+  margin: 0;
+  color: #4d6c96;
+  font-weight: 600;
+}
+
+.nav-item.is-disabled,
+.nav-subitem.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .survey-question-table input[type="text"] {
   width: 100%;
   min-height: 30px;
@@ -5227,6 +5266,50 @@ body.modal-open {
 }
 
 @media (max-width: 980px) {
+  .page-view[data-page-view="dashboard"] .workspace-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .page-view[data-page-view="dashboard"] .board-card {
+    padding: 16px 14px 14px;
+  }
+
+  .page-view[data-page-view="dashboard"] .dashboard-inner-card {
+    padding: 10px;
+  }
+
+  #dashboard-innovation-company-chart,
+  #dashboard-qualification-stacked-chart,
+  #dashboard-certification-pass-chart {
+    overflow-x: auto;
+  }
+
+  .learning-table-wrap {
+    overflow-x: auto;
+  }
+
+  .learning-table-wrap table {
+    min-width: 760px;
+  }
+
+  .survey-result-table-wrap {
+    overflow-x: auto;
+  }
+
+  .survey-result-table-wrap table {
+    min-width: 760px;
+  }
+
+  .admin-tools-actions {
+    gap: 8px;
+  }
+
+  .admin-tools-actions .action-button,
+  .admin-tools-actions .outline-button,
+  .admin-tools-actions .ghost-button {
+    min-width: 152px;
+  }
+
   .education-calendar-weekdays,
   .education-calendar-grid {
     min-width: 640px;
@@ -5247,6 +5330,19 @@ body.modal-open {
 }
 
 @media (max-width: 760px) {
+  .main-view {
+    padding: 0 2px;
+  }
+
+  .board-card {
+    padding: 14px 12px 12px;
+  }
+
+  .section-head h3,
+  .hero-card-head h3 {
+    font-size: 1.05rem;
+  }
+
   .education-calendar-toolbar {
     gap: 8px;
   }
@@ -5280,8 +5376,60 @@ body.modal-open {
     min-width: 760px;
   }
 
+  .users-table-wrap table {
+    min-width: 700px;
+  }
+
+  .qualification-table-wrap,
+  .table-wrap {
+    overflow-x: auto;
+  }
+
+  .qualification-table-wrap table,
   .education-admin-table-wrap table {
-    min-width: 500px;
+    min-width: 760px;
+  }
+
+  .project-form-grid,
+  .qualification-form-grid,
+  .education-admin-form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .form-field-span-1,
+  .form-field-span-2,
+  .form-field-span-3,
+  .form-field-span-4,
+  .form-field-span-5,
+  .form-field-span-6,
+  .form-field-span-8 {
+    grid-column: span 1 !important;
+  }
+
+  .modal-card,
+  .qualification-modal-card,
+  .education-admin-modal-card {
+    width: 100%;
+    max-width: 100%;
+    padding: 16px 14px;
+    border-radius: 16px;
+  }
+
+  .filter-toolbar,
+  .education-filter-toolbar,
+  .qualification-filter-toolbar,
+  .survey-result-filter-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-field {
+    width: 100%;
+  }
+
+  .filter-field input,
+  .filter-field select {
+    min-height: 34px;
   }
 
   .learning-evaluation-fields {

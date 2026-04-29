@@ -1184,14 +1184,8 @@
             </div>
             <div class="filter-toolbar survey-result-filter-toolbar">
               <label class="filter-field">
-                <span>대분류</span>
-                <select id="survey-result-major-filter">
-                  <option value="all">전체</option>
-                </select>
-              </label>
-              <label class="filter-field">
-                <span>중분류</span>
-                <select id="survey-result-middle-filter">
+                <span>연도</span>
+                <select id="survey-result-year-filter">
                   <option value="all">전체</option>
                 </select>
               </label>
@@ -1356,6 +1350,14 @@
       </section>
     </main>
   </div>
+
+  <section id="guest-access-overlay" class="guest-access-overlay" hidden>
+    <div class="guest-access-overlay-card">
+      <p class="panel-kicker">Pending Approval</p>
+      <h3>승인 대기 중입니다</h3>
+      <p>게스트 등급에서는 시스템 정보를 조회할 수 없습니다. 관리자 승인 후 이용해 주세요.</p>
+    </div>
+  </section>
 
   <div id="signup-modal" class="modal-backdrop" hidden>
     <section class="modal-card modal-card-compact auth-modal-card" role="dialog" aria-modal="true" aria-labelledby="signup-modal-title">
