@@ -161,6 +161,8 @@
     educationCostDetailsRef: null,
     surveyFormsRef: null,
     surveyResponsesRef: null,
+    externalEducationHistoriesRef: null,
+    externalQualificationHistoriesRef: null,
     usersRef: null,
     selectedUserUid: "",
     usersCache: {},
@@ -484,6 +486,8 @@
     unsubscribeRef(state.educationCostDetailsRef);
     unsubscribeRef(state.surveyFormsRef);
     unsubscribeRef(state.surveyResponsesRef);
+    unsubscribeRef(state.externalEducationHistoriesRef);
+    unsubscribeRef(state.externalQualificationHistoriesRef);
     state.projectsRef = null;
     state.milestonesRef = null;
     state.qualificationsRef = null;
@@ -494,6 +498,8 @@
     state.educationCostDetailsRef = null;
     state.surveyFormsRef = null;
     state.surveyResponsesRef = null;
+    state.externalEducationHistoriesRef = null;
+    state.externalQualificationHistoriesRef = null;
   }
 
   function unsubscribeUsersRef() {
@@ -863,6 +869,8 @@
     state.educationCostDetailsRef = subscribeObjectCollection("educationCostDetails", "getEducationCostDetails", "setEducationCostDetails");
     state.surveyFormsRef = subscribeDataCollection("surveyForms", "getSurveyForms", "setSurveyForms");
     state.surveyResponsesRef = subscribeDataCollection("surveyResponses", "getSurveyResponses", "setSurveyResponses");
+    state.externalEducationHistoriesRef = subscribeDataCollection("externalEducationHistories", "getExternalEducationHistories", "setExternalEducationHistories");
+    state.externalQualificationHistoriesRef = subscribeDataCollection("externalQualificationHistories", "getExternalQualificationHistories", "setExternalQualificationHistories");
   }
 
   function attachUsersSubscription() {
@@ -958,6 +966,12 @@
         return Promise.resolve(false);
       },
       saveSurveyResponses() {
+        return Promise.resolve(false);
+      },
+      saveExternalEducationHistories() {
+        return Promise.resolve(false);
+      },
+      saveExternalQualificationHistories() {
         return Promise.resolve(false);
       },
       getCurrentUserProfile() {
@@ -1498,6 +1512,20 @@
           }
 
           return state.db.ref("surveyResponses").set(listToMap(list)).then(() => true);
+        },
+        saveExternalEducationHistories(list) {
+          if (!state.db || !hasDataAccess()) {
+            return Promise.resolve(false);
+          }
+
+          return state.db.ref("externalEducationHistories").set(listToMap(list)).then(() => true);
+        },
+        saveExternalQualificationHistories(list) {
+          if (!state.db || !hasDataAccess()) {
+            return Promise.resolve(false);
+          }
+
+          return state.db.ref("externalQualificationHistories").set(listToMap(list)).then(() => true);
         },
         getCurrentUserProfile() {
           return state.currentUserProfile;

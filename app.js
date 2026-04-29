@@ -1321,6 +1321,7 @@ const elements = {
   adminImportQualificationsButton: document.querySelector("#admin-import-qualifications-button"),
   adminImportQualificationsFile: document.querySelector("#admin-import-qualifications-file"),
   adminExportEducationSchedulesButton: document.querySelector("#admin-export-education-schedules-button"),
+  adminExportOverallStatusButton: document.querySelector("#admin-export-overall-status-button"),
   adminImportEducationSchedulesButton: document.querySelector("#admin-import-education-schedules-button"),
   adminImportEducationSchedulesFile: document.querySelector("#admin-import-education-schedules-file"),
   adminExportEducationEnrollmentsButton: document.querySelector("#admin-export-education-enrollments-button"),
@@ -2054,6 +2055,121 @@ function exportExternalQualificationHistoryCsv() {
   downloadCsvFile(`외부자격이력_${toIsoDate(REFERENCE_DATE)}.csv`, columns, rows);
 }
 
+function exportOverallStatusCsv() {
+  const educationRows = educationEnrollments.map((enrollment) => {
+    const schedule = getEducationScheduleById(enrollment.scheduleId);
+    const course = schedule ? getEducationCourseById(schedule.courseId) : null;
+    return {
+      category: "교육",
+      source: "내부",
+      referenceId: enrollment.scheduleId,
+      title: schedule ? getEducationAdminDisplayCourseName(schedule, course) : "삭제된 강의",
+      level: "",
+      email: enrollment.email || "",
+      name: enrollment.name || "",
+      company: enrollment.company || "",
+      department: enrollment.department || "",
+      status: enrollment.waitlisted ? "대기" : (enrollment.completed ? "수료완료" : "신청완료"),
+      startDate: schedule?.startDate || "",
+      endDate: schedule?.endDate || "",
+      durationOrHours: schedule?.hoursText || "",
+      certificateNo: enrollment.certificateNo || "",
+      acquiredDate: "",
+      note: "교육신청",
+    };
+  });
+
+  const externalEducationRows = externalEducationHistories.map((item) => ({
+    category: "교육",
+    source: "외부",
+    referenceId: item.id || "",
+    title: item.courseName || "",
+    level: "",
+    email: item.email || "",
+    name: item.name || "",
+    company: item.company || "",
+    department: "",
+    status: item.completed ? "수료완료" : "미수료",
+    startDate: item.startDate || "",
+    endDate: item.endDate || "",
+    durationOrHours: item.hoursText || "",
+    certificateNo: "",
+    acquiredDate: "",
+    note: item.institution || "",
+  }));
+
+  const qualificationRows = certificationExamApplications.map((application) => {
+    const exam = getCertificationExamById(application.examId);
+    const examDate = String(exam?.examDateTime || "").slice(0, 10);
+    const isPassed = Boolean(application.completed);
+    const isFailed = !isPassed && isValidDateString(examDate) && toIsoDate(REFERENCE_DATE) > examDate;
+    const status = isPassed ? "합격" : (isFailed ? "불합격" : "신청완료");
+    return {
+      category: "자격",
+      source: "내부",
+      referenceId: application.examId || "",
+      title: exam?.examType || exam?.examTitle || "시험",
+      level: exam?.examGrade || "",
+      email: application.email || "",
+      name: application.name || "",
+      company: application.company || "",
+      department: application.department || "",
+      status,
+      startDate: examDate || "",
+      endDate: examDate || "",
+      durationOrHours: "",
+      certificateNo: application.certificateNo || "",
+      acquiredDate: application.acquiredDate || "",
+      note: "자격시험",
+    };
+  });
+
+  const externalQualificationRows = externalQualificationHistories.map((item) => ({
+    category: "자격",
+    source: "외부",
+    referenceId: item.id || "",
+    title: item.qualificationName || "",
+    level: item.grade || "",
+    email: item.email || "",
+    name: item.name || "",
+    company: item.company || "",
+    department: "",
+    status: item.status || "신청완료",
+    startDate: "",
+    endDate: "",
+    durationOrHours: "",
+    certificateNo: item.certificateNo || "",
+    acquiredDate: item.acquiredDate || "",
+    note: "외부자격",
+  }));
+
+  const rows = [
+    ...educationRows,
+    ...externalEducationRows,
+    ...qualificationRows,
+    ...externalQualificationRows,
+  ];
+  const columns = [
+    { key: "category", label: "구분" },
+    { key: "source", label: "출처" },
+    { key: "referenceId", label: "연계ID" },
+    { key: "title", label: "과정/자격명" },
+    { key: "level", label: "등급/레벨" },
+    { key: "email", label: "이메일" },
+    { key: "name", label: "성명" },
+    { key: "company", label: "법인명" },
+    { key: "department", label: "부서" },
+    { key: "status", label: "상태" },
+    { key: "startDate", label: "시작일" },
+    { key: "endDate", label: "종료일" },
+    { key: "durationOrHours", label: "시간/기간정보" },
+    { key: "certificateNo", label: "자격증번호" },
+    { key: "acquiredDate", label: "취득일자" },
+    { key: "note", label: "비고" },
+  ];
+  downloadCsvFile(`전체현황_합본_${toIsoDate(REFERENCE_DATE)}.csv`, columns, rows);
+}
+
 async function importProjectsCsv(file) {
   const text = await readFileAsText(file);
   const rows = parseCsvText(text);
@@ -2061,7 +2177,7 @@ async function importProjectsCsv(file) {
     window.alert("업로드할 데이터가 없습니다.");
     return;
   }
-  projects = rows.map((row, index) => normalizeProject({
+  const incoming = rows.map((row, index) => normalizeProject({
     id: row["관리번호"],
     name: row["과제명"],
     company: row["법인"],
@@ -2084,8 +2200,13 @@ async function importProjectsCsv(file) {
     evidence: row["근거자료"],
     note: row["비고"],
   }, `IN-26-${String(index + 1).padStart(3, "0")}`));
+  const byId = new Map(projects.map((item) => [String(item.id || "").trim(), item]));
+  incoming.forEach((item) => {
+    byId.set(String(item.id || "").trim(), item);
+  });
+  projects = Array.from(byId.values());
   saveProjects();
-  state.selectedId = projects[0]?.id ?? null;
+  state.selectedId = projects.find((project) => project.id === state.selectedId)?.id ?? projects[0]?.id ?? null;
 }
 
 async function importQualificationsCsv(file) {
@@ -2095,7 +2216,7 @@ async function importQualificationsCsv(file) {
     window.alert("업로드할 데이터가 없습니다.");
     return;
   }
-  qualifications = rows.map((row, index) => normalizeQualification({
+  const incoming = rows.map((row, index) => normalizeQualification({
     id: row.ID,
     qualificationType: row["자격구분"],
     grade: row["등급"],
@@ -2105,8 +2226,13 @@ async function importQualificationsCsv(file) {
     name: row["이름"],
     acquiredDate: row["취득일자"],
   }, `QL-${String(index + 1).padStart(3, "0")}`));
+  const byId = new Map(qualifications.map((item) => [String(item.id || "").trim(), item]));
+  incoming.forEach((item) => {
+    byId.set(String(item.id || "").trim(), item);
+  });
+  qualifications = Array.from(byId.values());
   saveQualifications();
-  state.selectedQualificationId = qualifications[0]?.id ?? null;
+  state.selectedQualificationId = qualifications.find((item) => item.id === state.selectedQualificationId)?.id ?? qualifications[0]?.id ?? null;
 }
 
 async function importEducationSchedulesCsv(file) {
@@ -2116,7 +2242,7 @@ async function importEducationSchedulesCsv(file) {
     window.alert("업로드할 데이터가 없습니다.");
     return;
   }
-  educationSchedules = rows.map((row, index) => normalizeEducationSchedule({
+  const incoming = rows.map((row, index) => normalizeEducationSchedule({
     id: row["일정ID"],
     majorCategory: row["대분류"],
     middleCategory: row["중분류"],
@@ -2138,9 +2264,14 @@ async function importEducationSchedulesCsv(file) {
     refundAmount: row["환급액"],
     note: row["비고"],
   }, `EDU-S-${String(index + 1).padStart(3, "0")}`));
+  const byId = new Map(educationSchedules.map((item) => [String(item.id || "").trim(), item]));
+  incoming.forEach((item) => {
+    byId.set(String(item.id || "").trim(), item);
+  });
+  educationSchedules = Array.from(byId.values());
   saveEducationSchedules();
-  state.selectedEducationScheduleId = educationSchedules[0]?.id ?? null;
-  state.selectedEducationAdminId = educationSchedules[0]?.id ?? null;
+  state.selectedEducationScheduleId = educationSchedules.find((item) => item.id === state.selectedEducationScheduleId)?.id ?? educationSchedules[0]?.id ?? null;
+  state.selectedEducationAdminId = educationSchedules.find((item) => item.id === state.selectedEducationAdminId)?.id ?? educationSchedules[0]?.id ?? null;
 }
 
 async function importEducationEnrollmentsCsv(file) {
@@ -2160,7 +2291,7 @@ async function importEducationEnrollmentsCsv(file) {
     return;
   }
 
-  educationEnrollments = rows.map((row, index) => {
+  const incoming = rows.map((row, index) => {
     const scheduleId = String(row["일정ID"] || row.scheduleId || "").trim();
     const typeToken = String(row["신청구분"] || row.waitlisted || "").trim().toLowerCase();
     const completedToken = String(row["상태"] || row.completed || "").trim().toLowerCase();
@@ -2190,6 +2321,19 @@ async function importEducationEnrollmentsCsv(file) {
       certificateNo: row["수료번호"] || row.certificateNo || "",
     }, `EDU-ENR-${String(index + 1).padStart(3, "0")}`);
   });
+  const getEnrollmentKey = (item) => {
+    const scheduleId = String(item.scheduleId || "").trim();
+    const email = String(item.email || "").trim().toLowerCase();
+    if (scheduleId && email) {
+      return `natural:${scheduleId}|${email}`;
+    }
+    return `id:${String(item.id || "").trim()}`;
+  };
+  const byKey = new Map(educationEnrollments.map((item) => [getEnrollmentKey(item), item]));
+  incoming.forEach((item) => {
+    byKey.set(getEnrollmentKey(item), item);
+  });
+  educationEnrollments = Array.from(byKey.values());
 
   saveEducationEnrollments();
 }
@@ -2201,7 +2345,28 @@ async function importExternalEducationHistoryCsv(file) {
     window.alert("업로드할 데이터가 없습니다.");
     return;
   }
-  externalEducationHistories = rows.map((row, index) => {
+  const missingEmailCount = rows.filter((row) => !String(row["이메일"] || row.email || "").trim()).length;
+  if (missingEmailCount) {
+    window.alert(`이메일 누락 데이터가 ${missingEmailCount}건 있습니다. 이메일은 필수값입니다.`);
+    return;
+  }
+  const duplicateEmailCourseKeySet = new Set();
+  const hasDuplicate = rows.some((row) => {
+    const email = String(row["이메일"] || row.email || "").trim().toLowerCase();
+    const courseName = String(row["과정명"] || row.courseName || "").trim().toLowerCase();
+    const startDate = String(row["시작일"] || row.startDate || "").trim();
+    const key = `${email}|${courseName}|${startDate}`;
+    if (duplicateEmailCourseKeySet.has(key)) {
+      return true;
+    }
+    duplicateEmailCourseKeySet.add(key);
+    return false;
+  });
+  if (hasDuplicate) {
+    window.alert("중복 데이터가 있습니다. (이메일+과정명+시작일) 조합은 한 건만 허용됩니다.");
+    return;
+  }
+  const incoming = rows.map((row, index) => {
     const completedToken = String(row["상태"] || row.completed || "").trim().toLowerCase();
     const completed = completedToken === "수료완료" || completedToken === "완료" || completedToken === "true" || completedToken === "1";
     return normalizeExternalEducationHistory({
@@ -2217,6 +2382,20 @@ async function importExternalEducationHistoryCsv(file) {
       completed,
     }, `EXT-EDU-${String(index + 1).padStart(3, "0")}`);
   });
+  const getExternalEducationKey = (item) => {
+    const email = String(item.email || "").trim().toLowerCase();
+    const courseName = String(item.courseName || "").trim().toLowerCase();
+    const startDate = String(item.startDate || "").trim();
+    if (email && courseName && startDate) {
+      return `natural:${email}|${courseName}|${startDate}`;
+    }
+    return `id:${String(item.id || "").trim()}`;
+  };
+  const byKey = new Map(externalEducationHistories.map((item) => [getExternalEducationKey(item), item]));
+  incoming.forEach((item) => {
+    byKey.set(getExternalEducationKey(item), item);
+  });
+  externalEducationHistories = Array.from(byKey.values());
   saveExternalEducationHistories();
 }
 
@@ -2227,7 +2406,28 @@ async function importExternalQualificationHistoryCsv(file) {
     window.alert("업로드할 데이터가 없습니다.");
     return;
   }
-  externalQualificationHistories = rows.map((row, index) => {
+  const missingEmailCount = rows.filter((row) => !String(row["이메일"] || row.email || "").trim()).length;
+  if (missingEmailCount) {
+    window.alert(`이메일 누락 데이터가 ${missingEmailCount}건 있습니다. 이메일은 필수값입니다.`);
+    return;
+  }
+  const duplicateEmailCertificateKeySet = new Set();
+  const hasDuplicate = rows.some((row) => {
+    const email = String(row["이메일"] || row.email || "").trim().toLowerCase();
+    const certificateNo = String(row["자격증번호"] || row.certificateNo || "").trim().toLowerCase();
+    const qualificationName = String(row["자격증명"] || row.qualificationName || "").trim().toLowerCase();
+    const key = `${email}|${qualificationName}|${certificateNo}`;
+    if (duplicateEmailCertificateKeySet.has(key)) {
+      return true;
+    }
+    duplicateEmailCertificateKeySet.add(key);
+    return false;
+  });
+  if (hasDuplicate) {
+    window.alert("중복 데이터가 있습니다. (이메일+자격증명+자격증번호) 조합은 한 건만 허용됩니다.");
+    return;
+  }
+  const incoming = rows.map((row, index) => {
     const statusToken = String(row["상태"] || row.status || "신청완료").trim();
     const status = statusToken === "합격" || statusToken === "불합격" || statusToken === "신청완료"
       ? statusToken
@@ -2244,6 +2444,20 @@ async function importExternalQualificationHistoryCsv(file) {
       status,
     }, `EXT-QL-${String(index + 1).padStart(3, "0")}`);
   });
+  const getExternalQualificationKey = (item) => {
+    const email = String(item.email || "").trim().toLowerCase();
+    const qualificationName = String(item.qualificationName || "").trim().toLowerCase();
+    const certificateNo = String(item.certificateNo || "").trim().toLowerCase();
+    if (email && qualificationName && certificateNo) {
+      return `natural:${email}|${qualificationName}|${certificateNo}`;
+    }
+    return `id:${String(item.id || "").trim()}`;
+  };
+  const byKey = new Map(externalQualificationHistories.map((item) => [getExternalQualificationKey(item), item]));
+  incoming.forEach((item) => {
+    byKey.set(getExternalQualificationKey(item), item);
+  });
+  externalQualificationHistories = Array.from(byKey.values());
   saveExternalQualificationHistories();
 }
 
@@ -3614,6 +3828,12 @@ function saveExternalEducationHistories() {
   } catch (error) {
     // local fallback only
   }
+
+  try {
+    window.innotrackFirebase?.saveExternalEducationHistories?.(externalEducationHistories);
+  } catch (error) {
+    // ignore remote sync failures and keep local persistence
+  }
 }
 
 function saveExternalQualificationHistories() {
@@ -3621,6 +3841,12 @@ function saveExternalQualificationHistories() {
     window.localStorage.setItem(EXTERNAL_QUALIFICATION_HISTORY_STORAGE_KEY, JSON.stringify(externalQualificationHistories));
   } catch (error) {
     // local fallback only
+  }
+
+  try {
+    window.innotrackFirebase?.saveExternalQualificationHistories?.(externalQualificationHistories);
+  } catch (error) {
+    // ignore remote sync failures and keep local persistence
   }
 }
 
@@ -3699,6 +3925,22 @@ function persistSurveyFormsLocally() {
 function persistSurveyResponsesLocally() {
   try {
     window.localStorage.setItem(SURVEY_RESPONSE_STORAGE_KEY, JSON.stringify(surveyResponses));
+  } catch (error) {
+    return;
+  }
+}
+
+function persistExternalEducationHistoriesLocally() {
+  try {
+    window.localStorage.setItem(EXTERNAL_EDUCATION_HISTORY_STORAGE_KEY, JSON.stringify(externalEducationHistories));
+  } catch (error) {
+    return;
+  }
+}
+
+function persistExternalQualificationHistoriesLocally() {
+  try {
+    window.localStorage.setItem(EXTERNAL_QUALIFICATION_HISTORY_STORAGE_KEY, JSON.stringify(externalQualificationHistories));
   } catch (error) {
     return;
   }
@@ -3835,6 +4077,22 @@ function replaceSurveyResponsesFromExternal(list = []) {
     .map((response, index) => normalizeSurveyResponse(response, `SVR-${String(index + 1).padStart(3, "0")}`))
     .sort((left, right) => right.submittedAt.localeCompare(left.submittedAt));
   persistSurveyResponsesLocally();
+  render();
+}
+
+function replaceExternalEducationHistoriesFromExternal(list = []) {
+  const sourceList = Array.isArray(list) ? list : [];
+  externalEducationHistories = sourceList
+    .map((item, index) => normalizeExternalEducationHistory(item, `EXT-EDU-${String(index + 1).padStart(3, "0")}`));
+  persistExternalEducationHistoriesLocally();
+  render();
+}
+
+function replaceExternalQualificationHistoriesFromExternal(list = []) {
+  const sourceList = Array.isArray(list) ? list : [];
+  externalQualificationHistories = sourceList
+    .map((item, index) => normalizeExternalQualificationHistory(item, `EXT-QL-${String(index + 1).padStart(3, "0")}`));
+  persistExternalQualificationHistoriesLocally();
   render();
 }
 
@@ -5772,11 +6030,12 @@ function getQualificationTypeClass(type) {
 
 function renderQualificationMetrics() {
   const currentYear = String(REFERENCE_DATE.getFullYear());
-  const total = qualifications.length;
-  const sixSigmaCount = qualifications.filter((item) => item.qualificationType === "6σ").length;
-  const aicaCount = qualifications.filter((item) => item.qualificationType === "AICA").length;
-  const aiceCount = qualifications.filter((item) => item.qualificationType === "AICE").length;
-  const currentYearCount = qualifications.filter((item) => String(item.acquiredDate || "").startsWith(`${currentYear}-`)).length;
+  const qualificationRecords = getFilteredQualifications({ ignoreFilters: true });
+  const total = qualificationRecords.length;
+  const sixSigmaCount = qualificationRecords.filter((item) => item.qualificationType === "6σ").length;
+  const aicaCount = qualificationRecords.filter((item) => item.qualificationType === "AICA").length;
+  const aiceCount = qualificationRecords.filter((item) => item.qualificationType === "AICE").length;
+  const currentYearCount = qualificationRecords.filter((item) => String(item.acquiredDate || "").startsWith(`${currentYear}-`)).length;
 
   if (elements.qualificationMetricTotal) {
     elements.qualificationMetricTotal.textContent = String(total);
@@ -6061,9 +6320,28 @@ function renderCertificationApplicantTable() {
   }).join("");
 }
 
-function getFilteredQualifications() {
-  return qualifications
+function getFilteredQualifications(options = {}) {
+  const { ignoreFilters = false } = options;
+  const qualificationRecords = [
+    ...qualifications.map((item) => ({ ...item, sourceType: "internal" })),
+    ...externalQualificationHistories.map((item, index) => ({
+      id: item.id || `EXT-QL-${String(index + 1).padStart(3, "0")}`,
+      qualificationType: item.qualificationName || "-",
+      grade: item.grade || "-",
+      certificateNo: item.certificateNo || "",
+      company: item.company || "",
+      department: "",
+      name: item.name || "",
+      acquiredDate: item.acquiredDate || "",
+      sourceType: "external",
+    })),
+  ];
+
+  return qualificationRecords
     .filter((qualification) => {
+      if (ignoreFilters) {
+        return true;
+      }
       const matchesQuery = [
         qualification.qualificationType,
         qualification.grade,
@@ -6163,23 +6441,30 @@ function renderQualificationTable(filteredQualifications) {
       const qualificationTypeClass = getQualificationTypeClass(qualificationName);
       const ownerName = qualification.name || "-";
       const certificateNo = qualification.certificateNo || "-";
-
-      return `
-        <tr class="qualification-row ${isSelected ? "is-selected" : ""} fade-up" data-qualification-id="${qualification.id}" style="animation-delay:${index * 40}ms">
-          <td class="selection-cell qualification-selection-cell">
-            <span
+      const isExternal = qualification.sourceType === "external";
+      const selectionMarkup = isExternal
+        ? '<span class="qualification-selection-placeholder">-</span>'
+        : `<span
               class="selection-box ${isChecked ? "is-selected" : ""}"
               data-qualification-select="${qualification.id}"
               role="button"
               tabindex="0"
               aria-label="${escapeHtml(`${qualificationName} 선택`)}"
               aria-pressed="${isChecked ? "true" : "false"}"
-            ></span>
+            ></span>`;
+      const sourceBadge = isExternal
+        ? '<span class="qualification-source-chip">외부</span>'
+        : "";
+
+      return `
+        <tr class="qualification-row ${isSelected ? "is-selected" : ""} fade-up" data-qualification-id="${qualification.id}" style="animation-delay:${index * 40}ms">
+          <td class="selection-cell qualification-selection-cell">
+            ${selectionMarkup}
           </td>
           <td class="qualification-title-cell">
             <div class="qualification-title-block">
               <strong><span class="qualification-type-badge ${qualificationTypeClass}">${escapeHtml(qualificationName)}</span></strong>
-              <span class="qualification-title-meta">${escapeHtml(qualificationGrade)}</span>
+              <span class="qualification-title-meta">${escapeHtml(qualificationGrade)} ${sourceBadge}</span>
             </div>
           </td>
           <td class="qualification-cert-cell">${escapeHtml(certificateNo)}</td>
@@ -8725,10 +9010,8 @@ function renderSurveyManagementPage() {
 
 function syncQualificationActionButtons(filteredQualifications) {
   const canManageQualifications = hasQualificationManagementAccess();
-  const hasSelectedQualification = Boolean(
-    filteredQualifications.length
-      && filteredQualifications.some((qualification) => qualification.id === state.selectedQualificationId),
-  );
+  const selectedQualification = filteredQualifications.find((qualification) => qualification.id === state.selectedQualificationId) || null;
+  const hasSelectedQualification = Boolean(selectedQualification && selectedQualification.sourceType !== "external");
   const hasCheckedQualifications = getSelectedQualificationIds().length > 0;
 
   if (elements.addQualificationButton) {
@@ -10779,6 +11062,7 @@ function bindEvents() {
 
   elements.adminExportProjectsButton?.addEventListener("click", exportProjectsCsv);
   elements.adminExportQualificationsButton?.addEventListener("click", exportQualificationsCsv);
+  elements.adminExportOverallStatusButton?.addEventListener("click", exportOverallStatusCsv);
   elements.adminExportEducationSchedulesButton?.addEventListener("click", exportEducationSchedulesCsv);
   elements.adminExportEducationEnrollmentsButton?.addEventListener("click", exportEducationEnrollmentsCsv);
   elements.adminExportExternalEducationHistoryButton?.addEventListener("click", exportExternalEducationHistoryCsv);
@@ -11536,6 +11820,8 @@ function init() {
     getEducationCostDetails: () => JSON.parse(JSON.stringify(educationCostDetailsBySchedule)),
     getSurveyForms: () => JSON.parse(JSON.stringify(surveyForms)),
     getSurveyResponses: () => JSON.parse(JSON.stringify(surveyResponses)),
+    getExternalEducationHistories: () => JSON.parse(JSON.stringify(externalEducationHistories)),
+    getExternalQualificationHistories: () => JSON.parse(JSON.stringify(externalQualificationHistories)),
     setProjects: replaceProjectsFromExternal,
     setMilestones: replaceMilestonesFromExternal,
     setQualifications: replaceQualificationsFromExternal,
@@ -11546,6 +11832,8 @@ function init() {
     setEducationCostDetails: replaceEducationCostDetailsFromExternal,
     setSurveyForms: replaceSurveyFormsFromExternal,
     setSurveyResponses: replaceSurveyResponsesFromExternal,
+    setExternalEducationHistories: replaceExternalEducationHistoriesFromExternal,
+    setExternalQualificationHistories: replaceExternalQualificationHistoriesFromExternal,
     render,
   };
 }

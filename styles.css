@@ -3150,6 +3150,25 @@ button {
   text-overflow: ellipsis;
 }
 
+.qualification-source-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0 6px;
+  min-height: 18px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #245cae;
+  background: #edf4ff;
+}
+
+.qualification-selection-placeholder {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .qualification-cert-cell {
   text-align: center;
   white-space: nowrap;
