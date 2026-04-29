@@ -1097,6 +1097,7 @@ const elements = {
   qualificationMetricSixSigma: document.querySelector("#qualification-metric-sixsigma"),
   qualificationMetricAica: document.querySelector("#qualification-metric-aica"),
   qualificationMetricAice: document.querySelector("#qualification-metric-aice"),
+  qualificationMetricOther: document.querySelector("#qualification-metric-other"),
   qualificationMetricCurrentYear: document.querySelector("#qualification-metric-current-year"),
   leagueBoard: document.querySelector("#league-board"),
   detailCard: document.querySelector("#detail-card"),
@@ -4510,6 +4511,19 @@ function getCertificationExamCalendarChipStatus(exam, referenceDate = REFERENCE_
   return { label: "접수중", className: "is-open", icon: "🟢" };
 }
 
+function isCertificationExamApplicationOpen(exam, referenceDate = REFERENCE_DATE) {
+  const referenceToken = referenceDate instanceof Date
+    ? toIsoDate(referenceDate)
+    : (isValidDateString(referenceDate) ? referenceDate : toIsoDate(REFERENCE_DATE));
+  const examDateToken = isValidDateString(String(exam?.examDateTime || "").slice(0, 10))
+    ? String(exam.examDateTime).slice(0, 10)
+    : referenceToken;
+  const startDate = isValidDateString(exam?.applicationStartDate) ? exam.applicationStartDate : examDateToken;
+  const endDateSource = isValidDateString(exam?.applicationEndDate) ? exam.applicationEndDate : startDate;
+  const endDate = parseDate(endDateSource) >= parseDate(startDate) ? endDateSource : startDate;
+  return referenceToken >= startDate && referenceToken <= endDate;
+}
+
 function getCertificationExamsOnDate(dateToken, sourceExams = certificationExams) {
   if (!isValidDateString(dateToken)) {
     return [];
@@ -6037,7 +6051,11 @@ function getQualificationTypeClass(type) {
     return "type-aica";
   }
 
-  return "type-aice";
+  if (type === "AICE") {
+    return "type-aice";
+  }
+
+  return "type-other";
 }
 
 function renderQualificationMetrics() {
@@ -6047,6 +6065,11 @@ function renderQualificationMetrics() {
   const sixSigmaCount = qualificationRecords.filter((item) => item.qualificationType === "6σ").length;
   const aicaCount = qualificationRecords.filter((item) => item.qualificationType === "AICA").length;
   const aiceCount = qualificationRecords.filter((item) => item.qualificationType === "AICE").length;
+  const otherCount = qualificationRecords.filter((item) => (
+    item.qualificationType !== "6σ"
+    && item.qualificationType !== "AICA"
+    && item.qualificationType !== "AICE"
+  )).length;
   const currentYearCount = qualificationRecords.filter((item) => String(item.acquiredDate || "").startsWith(`${currentYear}-`)).length;
 
   if (elements.qualificationMetricTotal) {
@@ -6063,6 +6086,10 @@ function renderQualificationMetrics() {
 
   if (elements.qualificationMetricAice) {
     elements.qualificationMetricAice.textContent = String(aiceCount);
+  }
+
+  if (elements.qualificationMetricOther) {
+    elements.qualificationMetricOther.textContent = String(otherCount);
   }
 
   if (elements.qualificationMetricCurrentYear) {
@@ -6497,12 +6524,15 @@ function renderQualificationTable(filteredQualifications) {
 }
 
 function buildQualificationCompanySummary(filteredQualifications) {
+  const typeTokens = [...qualificationTypeOptions, "기타"];
   return companyOptions
     .map((company) => {
       const companyItems = filteredQualifications.filter((qualification) => qualification.company === company);
-      const typeCounts = qualificationTypeOptions.map((type) => ({
+      const typeCounts = typeTokens.map((type) => ({
         type,
-        count: companyItems.filter((qualification) => qualification.qualificationType === type).length,
+        count: type === "기타"
+          ? companyItems.filter((qualification) => !qualificationTypeOptions.includes(qualification.qualificationType)).length
+          : companyItems.filter((qualification) => qualification.qualificationType === type).length,
       }));
 
       return {
@@ -6516,10 +6546,13 @@ function buildQualificationCompanySummary(filteredQualifications) {
 }
 
 function buildQualificationTypeSummary(filteredQualifications) {
-  return qualificationTypeOptions.map((type) => ({
+  const baseSummary = qualificationTypeOptions.map((type) => ({
     type,
     total: filteredQualifications.filter((qualification) => qualification.qualificationType === type).length,
   }));
+  const otherTotal = filteredQualifications.filter((qualification) =>
+    !qualificationTypeOptions.includes(qualification.qualificationType)).length;
+  return [...baseSummary, { type: "기타", total: otherTotal }];
 }
 
 function renderQualificationCompanyBoard(filteredQualifications) {
@@ -6535,7 +6568,7 @@ function renderQualificationCompanyBoard(filteredQualifications) {
   }
 
   const maxTotal = Math.max(...summary.map((entry) => entry.total), 1);
-  const legend = qualificationTypeOptions
+  const legend = [...qualificationTypeOptions, "기타"]
     .map((type) => {
       const typeClass = getQualificationTypeClass(type);
       return `
@@ -6604,7 +6637,9 @@ function renderQualificationTypeBoard(filteredQualifications) {
       ? "#2563eb"
       : entry.type === "AICA"
         ? "#f97316"
-        : "#9333ea";
+        : entry.type === "AICE"
+          ? "#9333ea"
+          : "#0f766e";
 
     colorStops.push(`${color} ${angleCursor}deg ${nextAngle}deg`);
     angleCursor = nextAngle;
@@ -6794,16 +6829,25 @@ function renderEducationCalendarPage() {
     String(schedule.year || "").trim() === currentYear
     || String(schedule.startDate || "").startsWith(`${currentYear}-`)
   ));
-  const monthlyOpenedCount = monthSchedules.length;
-  const openRecruitCount = yearSchedules.filter((schedule) => isEducationRecruitPeriodOpen(schedule)).length;
+  const yearCertificationExams = certificationExams.filter((exam) => {
+    const examDateToken = String(exam.examDateTime || "").slice(0, 10);
+    return isValidDateString(examDateToken) && examDateToken.startsWith(`${currentYear}-`);
+  });
+  const monthlyOpenedCount = monthSchedules.length + monthCertificationExams.length;
+  const openRecruitCount = yearSchedules.filter((schedule) => isEducationRecruitPeriodOpen(schedule)).length
+    + yearCertificationExams.filter((exam) => isCertificationExamApplicationOpen(exam)).length;
   const completedCount = yearSchedules.filter((schedule) => (
     schedule.status === "completed_needs_settlement"
     || schedule.status === "settled"
     || schedule.status === "completed"
-  )).length;
+  )).length
+    + yearCertificationExams.filter((exam) => {
+      const examDateToken = String(exam.examDateTime || "").slice(0, 10);
+      return isValidDateString(examDateToken) && toIsoDate(REFERENCE_DATE) > examDateToken;
+    }).length;
 
   if (elements.educationMetricMonthly) {
-    elements.educationMetricMonthly.textContent = String(yearSchedules.length);
+    elements.educationMetricMonthly.textContent = String(yearSchedules.length + yearCertificationExams.length);
     const titleNode = elements.educationMetricMonthly.previousElementSibling;
     if (titleNode) {
       titleNode.textContent = `${currentYear}년 운영과정 수`;

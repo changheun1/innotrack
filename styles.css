@@ -1530,18 +1530,22 @@ button {
   border-color: rgba(255, 255, 255, 0.76);
 }
 
+.learning-board-card > .section-head {
+  margin-bottom: 10px;
+}
+
 .learning-table-wrap table {
   width: 100%;
   min-width: 0;
 }
 
 .learning-subtable-head {
-  margin-top: 14px;
-  margin-bottom: 6px;
+  margin-top: 18px;
+  margin-bottom: 10px;
 }
 
 .learning-subtable-head h4 {
-  margin: 8px 0 0;
+  margin: 0;
   font-size: 1.3rem;
   color: inherit;
 }
@@ -1561,6 +1565,10 @@ button {
 .learning-table td:nth-child(4),
 .learning-table td:nth-child(5),
 .learning-table td:nth-child(6) {
+  text-align: center;
+}
+
+#my-learning-certification-table-body td {
   text-align: center;
 }
 
@@ -2741,6 +2749,10 @@ button {
   background: #9333ea;
 }
 
+.qualification-chart-dot.type-other {
+  background: #0f766e;
+}
+
 .qualification-company-chart {
   display: grid;
   gap: 12px;
@@ -2794,6 +2806,10 @@ button {
 
 .qualification-company-segment.type-aice {
   background: linear-gradient(90deg, #d8b4fe, #9333ea);
+}
+
+.qualification-company-segment.type-other {
+  background: linear-gradient(90deg, #99f6e4, #0f766e);
 }
 
 .qualification-donut-layout {
@@ -3230,6 +3246,11 @@ button {
 .qualification-type-badge.type-aice {
   background: #f4e8ff;
   color: #7e22ce;
+}
+
+.qualification-type-badge.type-other {
+  background: #e6fffa;
+  color: #0f766e;
 }
 
 .qualification-grade-badge {
