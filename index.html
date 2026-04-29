@@ -282,55 +282,60 @@
 
         <section class="workspace-grid" style="grid-template-columns:1.7fr 1fr;">
           <section class="board-card">
-            <div class="section-head">
+            <div class="section-head dashboard-emphasis-head">
               <div>
-                <p class="panel-kicker">Notice</p>
                 <h3>공지사항</h3>
               </div>
             </div>
-            <div id="dashboard-notice-list" class="milestone-list"></div>
+            <div class="dashboard-inner-card">
+              <div id="dashboard-notice-list" class="milestone-list"></div>
+            </div>
           </section>
           <section class="board-card">
-            <div class="section-head">
+            <div class="section-head dashboard-emphasis-head">
               <div>
-                <p class="panel-kicker">Key Milestone</p>
                 <h3>주요 일정</h3>
               </div>
             </div>
-            <div id="dashboard-milestone-list" class="milestone-list"></div>
+            <div class="dashboard-inner-card">
+              <div id="dashboard-milestone-list" class="milestone-list"></div>
+            </div>
           </section>
         </section>
 
         <section class="workspace-grid">
           <section class="board-card" style="grid-column:1 / -1;">
-            <div class="section-head small-head">
+            <div class="section-head small-head dashboard-emphasis-head">
               <div>
-                <p class="panel-kicker">Innovation Task</p>
                 <h3>법인별 과제건수/진행률</h3>
               </div>
             </div>
-            <div id="dashboard-innovation-company-chart"></div>
+            <div class="dashboard-inner-card">
+              <div id="dashboard-innovation-company-chart"></div>
+            </div>
           </section>
         </section>
 
         <section class="workspace-grid" style="grid-template-columns:1.35fr 0.65fr;">
           <section class="board-card">
-            <div class="section-head small-head">
+            <div class="section-head small-head dashboard-emphasis-head">
               <div>
-                <p class="panel-kicker">Qualification</p>
                 <h3>법인별 자격 취득 현황</h3>
               </div>
             </div>
-            <div id="dashboard-qualification-stacked-chart"></div>
+            <div class="dashboard-inner-card">
+              <div id="dashboard-qualification-stacked-chart"></div>
+            </div>
           </section>
           <section class="board-card">
-            <div class="section-head small-head">
+            <div class="section-head small-head dashboard-emphasis-head">
               <div>
-                <p class="panel-kicker">Certification Pass</p>
                 <h3>자격유형별 합격률</h3>
               </div>
             </div>
-            <div id="dashboard-certification-pass-chart"></div>
+            <div class="dashboard-inner-card">
+              <div id="dashboard-certification-pass-chart"></div>
+            </div>
           </section>
         </section>
       </section>
@@ -551,6 +556,11 @@
               <button id="education-month-prev" class="outline-button" type="button">이전</button>
               <strong id="education-month-label">-</strong>
               <button id="education-month-next" class="outline-button" type="button">다음</button>
+              <div class="education-calendar-type-filter" role="group" aria-label="일정 유형 필터">
+                <button id="education-calendar-filter-all" type="button" class="education-calendar-filter-button is-active">전체</button>
+                <button id="education-calendar-filter-education" type="button" class="education-calendar-filter-button">교육</button>
+                <button id="education-calendar-filter-certification" type="button" class="education-calendar-filter-button">시험</button>
+              </div>
             </div>
             <div class="education-calendar-weekdays">
               <span>일</span>
@@ -624,6 +634,14 @@
               <div>
                 <p class="panel-kicker">My Learning</p>
                 <h3>내 교육현황</h3>
+              </div>
+              <div class="board-actions">
+                <label class="filter-field learning-year-filter-field">
+                  <span>연도</span>
+                  <select id="my-learning-year-filter">
+                    <option value="all">전체</option>
+                  </select>
+                </label>
               </div>
             </div>
             <div class="table-wrap learning-table-wrap">
@@ -988,7 +1006,7 @@
             <div class="section-head">
               <div>
                 <p class="panel-kicker">Certification Exam Board</p>
-                <h3>자격검정 운영 테이블</h3>
+                <h3>자격검정 관리</h3>
               </div>
               <div class="board-actions" aria-label="자격검정관리 작업">
                 <button id="add-certification-exam-button" class="action-button board-action-button" type="button">등록</button>
@@ -1227,6 +1245,31 @@
           </div>
         </header>
         <section class="workspace-grid admin-tools-grid" aria-label="관리자 전용 데이터 관리">
+          <article id="admin-signup-queue-card" class="board-card admin-tools-card" hidden>
+            <div class="section-head small-head">
+              <div>
+                <p class="panel-kicker">Membership</p>
+                <h3>가입 승인 대기함</h3>
+              </div>
+            </div>
+            <div class="admin-signup-queue-metric">
+              <span>가입대기</span>
+              <strong id="admin-signup-pending-count">0건</strong>
+            </div>
+            <div class="table-wrap admin-signup-queue-table-wrap">
+              <table class="task-table admin-dashboard-table admin-signup-queue-table">
+                <thead>
+                  <tr>
+                    <th scope="col">이름</th>
+                    <th scope="col">이메일</th>
+                    <th scope="col">가입일</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-signup-pending-table-body"></tbody>
+              </table>
+            </div>
+          </article>
+
           <article class="board-card admin-tools-card">
             <div class="section-head small-head">
               <div>
@@ -1253,6 +1296,7 @@
               <button id="admin-import-qualifications-button" class="outline-button admin-upload-button" type="button">자격현황 일괄업로드</button>
               <input id="admin-import-qualifications-file" type="file" accept=".csv,text/csv" hidden>
             </div>
+            <p class="admin-tools-note">일괄업로드 시 이메일은 필수 항목입니다.</p>
           </article>
 
           <article class="board-card admin-tools-card">
@@ -1280,6 +1324,7 @@
               <button id="admin-export-education-costs-button" class="ghost-button admin-download-button" type="button">교육 비용 환급상세 다운로드</button>
               <button id="admin-export-survey-results-button" class="ghost-button admin-download-button" type="button">설문결과 이력 다운로드</button>
             </div>
+            <p class="admin-tools-note">교육/자격 이력 일괄업로드 시 이메일은 필수 항목입니다.</p>
           </article>
 
           <article class="board-card admin-tools-card">
@@ -1484,6 +1529,10 @@
             <span>자격구분</span>
             <select id="qualification-type" name="qualificationType" required></select>
           </label>
+          <label id="qualification-custom-name-field" class="form-field form-field-span-3" hidden>
+            <span>자격증명</span>
+            <input id="qualification-custom-name" name="qualificationCustomName" type="text" placeholder="예: 정보처리기사">
+          </label>
           <label class="form-field form-field-span-3">
             <span>등급</span>
             <select id="qualification-grade" name="grade" required></select>
@@ -1503,6 +1552,10 @@
           <label class="form-field form-field-span-4">
             <span>이름</span>
             <input id="qualification-name" name="name" type="text" required placeholder="예: 홍길동">
+          </label>
+          <label class="form-field form-field-span-4">
+            <span>대상자 이메일</span>
+            <input id="qualification-email" name="email" type="email" required placeholder="예: user@company.com">
           </label>
           <label class="form-field form-field-span-4">
             <span>취득일자</span>

@@ -61,13 +61,18 @@ const stageShortLabels = {
   Control: "C",
   Completed: "완",
 };
+const dashboardNewBadgeDays = 14;
+const managementNewBadgeDays = 7;
 
 const projectTypeOptions = ["6σ", "6S", "R&D", "AI"];
 const qualificationTypeOptions = ["6σ", "AICA", "AICE"];
+const qualificationOtherType = "기타";
+const qualificationRecordTypeOptions = [...qualificationTypeOptions, qualificationOtherType];
 const qualificationGradeOptions = {
   "6σ": ["GB", "BB", "MBB"],
   AICA: ["L2", "L3", "L4"],
   AICE: ["Basic", "Associate", "Professional"],
+  [qualificationOtherType]: ["-"],
 };
 const certificationOperationStatusLabels = {
   planned: "예정",
@@ -1022,6 +1027,7 @@ const state = {
   selectedEducationDate: toIsoDate(REFERENCE_DATE),
   selectedEducationScheduleId: educationSchedules[0]?.id ?? null,
   selectedCalendarEventType: "education",
+  educationCalendarFilter: "all",
   educationExpandedDate: null,
   educationApplyFormScheduleId: null,
   certificationApplyFormExamId: null,
@@ -1036,6 +1042,7 @@ const state = {
   selectedEducationEnrollmentIds: [],
   myLearningEvaluationEnrollmentId: null,
   myLearningUpcomingEnrollmentId: null,
+  myLearningYear: "all",
   selectedSurveyFormId: surveyForms[0]?.id ?? null,
   surveyQuestionDraftType: "scale",
   surveyResultMajorFilter: "all",
@@ -1162,6 +1169,9 @@ const elements = {
   projectName: document.querySelector("#project-name"),
   projectCompany: document.querySelector("#project-company"),
   qualificationType: document.querySelector("#qualification-type"),
+  qualificationCustomNameField: document.querySelector("#qualification-custom-name-field"),
+  qualificationCustomName: document.querySelector("#qualification-custom-name"),
+  qualificationEmail: document.querySelector("#qualification-email"),
   qualificationGrade: document.querySelector("#qualification-grade"),
   qualificationNumber: document.querySelector("#qualification-number"),
   qualificationCompany: document.querySelector("#qualification-company"),
@@ -1216,6 +1226,9 @@ const elements = {
   educationTrackFilter: document.querySelector("#education-track-filter"),
   educationMonthPrevButton: document.querySelector("#education-month-prev"),
   educationMonthNextButton: document.querySelector("#education-month-next"),
+  educationCalendarFilterAll: document.querySelector("#education-calendar-filter-all"),
+  educationCalendarFilterEducation: document.querySelector("#education-calendar-filter-education"),
+  educationCalendarFilterCertification: document.querySelector("#education-calendar-filter-certification"),
   educationMonthLabel: document.querySelector("#education-month-label"),
   educationCalendarGrid: document.querySelector("#education-calendar-grid"),
   educationScheduleDetail: document.querySelector("#education-schedule-detail"),
@@ -1229,6 +1242,7 @@ const elements = {
   myLearningMetricScore: document.querySelector("#my-learning-metric-score"),
   myLearningTableBody: document.querySelector("#my-learning-table-body"),
   myLearningCertificationTableBody: document.querySelector("#my-learning-certification-table-body"),
+  myLearningYearFilter: document.querySelector("#my-learning-year-filter"),
   myLearningUpcomingList: document.querySelector("#my-learning-upcoming-list"),
   myLearningEvaluationPanel: document.querySelector("#my-learning-evaluation-panel"),
   educationAdminSearchInput: document.querySelector("#education-admin-search-input"),
@@ -1811,6 +1825,9 @@ function exportQualificationsCsv() {
   const columns = [
     { key: "id", label: "ID" },
     { key: "qualificationType", label: "자격구분" },
+    { key: "qualificationDisplayName", label: "자격증명" },
+    { key: "qualificationAddedAt", label: "등록일" },
+    { key: "email", label: "이메일" },
     { key: "grade", label: "등급" },
     { key: "certificateNo", label: "자격번호" },
     { key: "company", label: "법인" },
@@ -2217,9 +2234,17 @@ async function importQualificationsCsv(file) {
     window.alert("업로드할 데이터가 없습니다.");
     return;
   }
+  const missingEmailCount = rows.filter((row) => !String(row["이메일"] || row.email || "").trim()).length;
+  if (missingEmailCount) {
+    window.alert(`이메일 누락 데이터가 ${missingEmailCount}건 있습니다. 이메일은 필수값입니다.`);
+    return;
+  }
   const incoming = rows.map((row, index) => normalizeQualification({
     id: row.ID,
     qualificationType: row["자격구분"],
+    qualificationCustomName: row["자격증명"] || row["자격증명(직접입력)"],
+    qualificationAddedAt: row["등록일"] || row["신규등록일"] || row["등록일자"] || row["취득일자"],
+    email: row["이메일"] || row.email || "",
     grade: row["등급"],
     certificateNo: row["자격번호"],
     company: row["법인"],
@@ -2227,9 +2252,29 @@ async function importQualificationsCsv(file) {
     name: row["이름"],
     acquiredDate: row["취득일자"],
   }, `QL-${String(index + 1).padStart(3, "0")}`));
+  const buildQualificationMergeKey = (item) => [
+    String(item.email || "").trim().toLowerCase(),
+    String(item.name || "").trim().toLowerCase(),
+    String(item.certificateNo || "").trim().toLowerCase(),
+    String(item.qualificationDisplayName || item.qualificationType || "").trim().toLowerCase(),
+  ].join("|");
   const byId = new Map(qualifications.map((item) => [String(item.id || "").trim(), item]));
+  const byCompositeKey = new Map(
+    qualifications.map((item) => [buildQualificationMergeKey(normalizeQualification(item, item.id)), item]),
+  );
   incoming.forEach((item) => {
-    byId.set(String(item.id || "").trim(), item);
+    const itemId = String(item.id || "").trim();
+    const compositeKey = buildQualificationMergeKey(item);
+    const matchedById = itemId ? byId.get(itemId) : null;
+    const matchedByComposite = byCompositeKey.get(compositeKey);
+    const targetId = matchedById?.id || matchedByComposite?.id || item.id;
+    const merged = normalizeQualification({
+      ...(matchedById || matchedByComposite || {}),
+      ...item,
+      id: targetId,
+    }, targetId);
+    byId.set(targetId, merged);
+    byCompositeKey.set(buildQualificationMergeKey(merged), merged);
   });
   qualifications = Array.from(byId.values());
   saveQualifications();
@@ -2261,6 +2306,7 @@ async function importEducationSchedulesCsv(file) {
     location: row["장소"],
     daysText: row["교육일수"],
     hoursText: row["교육시간"],
+    addedAt: row["등록일"] || row.addedAt || "",
     totalCost: row["총교육비"],
     refundAmount: row["환급액"],
     note: row["비고"],
@@ -2280,6 +2326,11 @@ async function importEducationEnrollmentsCsv(file) {
   const rows = parseCsvText(text);
   if (!rows.length) {
     window.alert("업로드할 데이터가 없습니다.");
+    return;
+  }
+  const missingEmailCount = rows.filter((row) => !String(row["이메일"] || row.email || "").trim()).length;
+  if (missingEmailCount) {
+    window.alert(`이메일 누락 데이터가 ${missingEmailCount}건 있습니다. 이메일은 필수값입니다.`);
     return;
   }
 
@@ -2532,7 +2583,31 @@ function getQualificationGradeList(type) {
 }
 
 function getAllQualificationGrades() {
-  return qualificationTypeOptions.flatMap((type) => getQualificationGradeList(type));
+  return qualificationRecordTypeOptions.flatMap((type) => getQualificationGradeList(type));
+}
+
+function normalizeQualificationType(type) {
+  return qualificationRecordTypeOptions.includes(type) ? type : qualificationTypeOptions[0];
+}
+
+function getQualificationDisplayName(qualificationType, qualificationCustomName = "") {
+  if (qualificationType === qualificationOtherType) {
+    const customName = String(qualificationCustomName || "").trim();
+    return customName || qualificationOtherType;
+  }
+  return qualificationType;
+}
+
+function isBaseQualificationType(type) {
+  return qualificationTypeOptions.includes(String(type || "").trim());
+}
+
+function isWithinRecentDays(dateString, days = 7, referenceDate = REFERENCE_DATE) {
+  if (!isValidDateString(dateString)) {
+    return false;
+  }
+  const elapsedDays = Math.floor((parseDate(toIsoDate(referenceDate)).getTime() - parseDate(dateString).getTime()) / MS_PER_DAY);
+  return elapsedDays >= 0 && elapsedDays <= days;
 }
 
 function getLegacyMilestoneDate(milestone) {
@@ -3068,22 +3143,41 @@ function normalizeProject(project, fallbackId = "") {
 }
 
 function normalizeQualification(qualification, fallbackId = "") {
-  const qualificationType = qualificationTypeOptions.includes(qualification.qualificationType)
-    ? qualification.qualificationType
-    : qualificationTypeOptions[0];
+  const qualificationType = normalizeQualificationType(qualification.qualificationType);
+  const qualificationCustomName = qualificationType === qualificationOtherType
+    ? String(
+      qualification.qualificationCustomName
+      || qualification.qualificationName
+      || qualification.qualificationDisplayName
+      || "",
+    ).trim()
+    : "";
+  const qualificationDisplayName = getQualificationDisplayName(qualificationType, qualificationCustomName);
   const gradeOptions = getQualificationGradeList(qualificationType);
   const grade = gradeOptions.includes(qualification.grade) ? qualification.grade : (gradeOptions[0] || "");
   const company = companyOptions.includes(qualification.company) ? qualification.company : companyOptions[0];
   const acquiredDate = isValidDateString(qualification.acquiredDate)
     ? qualification.acquiredDate
     : getDefaultQualificationDate();
+  const qualificationAddedAt = isValidDateString(qualification.qualificationAddedAt)
+    ? qualification.qualificationAddedAt
+    : (isValidDateString(qualification.addedAt)
+      ? qualification.addedAt
+      : (isValidDateString(qualification.registeredAt)
+        ? qualification.registeredAt
+        : ""));
   const certificateNo = String(qualification.certificateNo || "").trim();
+  const email = String(qualification.email || "").trim().toLowerCase();
 
   return {
     id: qualification.id || fallbackId || generateQualificationId(),
     qualificationType,
+    qualificationCustomName,
+    qualificationDisplayName,
+    qualificationAddedAt,
     grade,
     certificateNo: certificateNo || `${qualificationType}-${String(REFERENCE_DATE.getFullYear()).slice(-2)}-${String(fallbackId || generateQualificationId()).slice(-3)}`,
+    email,
     company,
     department: String(qualification.department || "").trim(),
     name: String(qualification.name || "").trim(),
@@ -3124,6 +3218,9 @@ function normalizeCertificationExam(exam, fallbackId = "") {
   const capacity = Math.max(1, Math.round(parseNumber(exam.capacity, 30)));
   const applicantsCount = Math.max(0, Math.round(parseNumber(exam.applicantsCount, 0)));
   const passedCount = Math.max(0, Math.round(parseNumber(exam.passedCount, 0)));
+  const addedAt = isValidDateString(exam.addedAt)
+    ? exam.addedAt
+    : (isValidDateString(exam.createdAt) ? exam.createdAt : "");
 
   return {
     id: exam.id || fallbackId || generateCertificationExamId(),
@@ -3140,6 +3237,7 @@ function normalizeCertificationExam(exam, fallbackId = "") {
     capacity,
     applicantsCount,
     passedCount,
+    addedAt,
     examLocation: String(exam.examLocation || exam.company || "").trim(),
     operationStatus: normalizeCertificationOperationStatus(exam.operationStatus),
     note: String(exam.note || "").trim(),
@@ -3165,6 +3263,9 @@ function normalizeEducationSchedule(schedule, fallbackId = "") {
     : applicationStartDate;
   const defaultSurveyFormId = surveyForms[0]?.id || "";
   const hasSurveyForm = surveyForms.some((form) => form.id === schedule.surveyFormId);
+  const addedAt = isValidDateString(schedule.addedAt)
+    ? schedule.addedAt
+    : (isValidDateString(schedule.createdAt) ? schedule.createdAt : "");
 
   return {
     id: schedule.id || fallbackId || `EDU-S-${String(Date.now()).slice(-6)}`,
@@ -3203,6 +3304,7 @@ function normalizeEducationSchedule(schedule, fallbackId = "") {
     operatorDept: normalizeEducationAdminOperatorDept(schedule.operatorDept || "경영혁신실"),
     attendees: Math.max(0, Math.round(parseNumber(schedule.attendees, 0))),
     avgScore: Number(Math.max(0, parseNumber(schedule.avgScore, 0)).toFixed(2)),
+    addedAt,
     totalCost: Math.max(0, Math.round(parseNumber(schedule.totalCost, 0))),
     refundAmount: Math.max(0, Math.round(parseNumber(schedule.refundAmount, 0))),
     note: String(schedule.note || "").trim(),
@@ -4148,6 +4250,10 @@ function getProjectById(projectId) {
 
 function getQualificationById(qualificationId) {
   return qualifications.find((qualification) => qualification.id === qualificationId) || null;
+}
+
+function getExternalQualificationHistoryById(qualificationId) {
+  return externalQualificationHistories.find((qualification) => qualification.id === qualificationId) || null;
 }
 
 function getCertificationExamById(examId) {
@@ -5198,15 +5304,14 @@ function syncAllEducationScheduleCostSummaries() {
 function getMyLearningEnrollments() {
   const identity = getEducationCurrentIdentity();
   const identityEmail = String(identity.email || "").trim().toLowerCase();
+  if (!identityEmail) {
+    return [];
+  }
 
   return educationEnrollments
     .filter((enrollment) => {
       const enrollmentEmail = String(enrollment.email || "").trim().toLowerCase();
-      if (identityEmail && enrollmentEmail) {
-        return enrollmentEmail === identityEmail;
-      }
-      return enrollment.employeeId === identity.employeeId
-        || (enrollment.name === identity.name && enrollment.company === identity.company);
+      return Boolean(enrollmentEmail) && enrollmentEmail === identityEmail;
     })
     .sort((left, right) => right.appliedAt.localeCompare(left.appliedAt));
 }
@@ -5264,6 +5369,11 @@ function applyEducationSchedule(scheduleId, applicationDraft = {}) {
   }
 
   const identity = getEducationCurrentIdentity();
+  const identityEmail = String(identity.email || "").trim().toLowerCase();
+  if (!identityEmail) {
+    window.alert("신청자 이메일 정보가 필요합니다. 내 정보에서 이메일을 확인해 주세요.");
+    return;
+  }
   const recruitStatusKey = getEducationRecruitStatusKey(schedule);
   const capacity = Math.max(0, Math.round(parseNumber(schedule.capacity, 0)));
   const canJoinWaitlist = isEducationWaitlistOpen(schedule);
@@ -5272,7 +5382,8 @@ function applyEducationSchedule(scheduleId, applicationDraft = {}) {
     return;
   }
   const alreadyApplied = educationEnrollments.some((enrollment) =>
-    enrollment.scheduleId === scheduleId && enrollment.employeeId === identity.employeeId
+    enrollment.scheduleId === scheduleId
+    && String(enrollment.email || "").trim().toLowerCase() === identityEmail
   );
 
   if (alreadyApplied) {
@@ -5357,13 +5468,19 @@ function applyCertificationExam(examId, applicationDraft = {}) {
     return;
   }
   const identity = getEducationCurrentIdentity();
+  const identityEmail = String(identity.email || "").trim().toLowerCase();
+  if (!identityEmail) {
+    window.alert("신청자 이메일 정보가 필요합니다. 내 정보에서 이메일을 확인해 주세요.");
+    return;
+  }
   const status = getCertificationExamCalendarChipStatus(exam);
   if (status.label !== "접수중") {
     window.alert("접수 가능 기간이 아닙니다.");
     return;
   }
   const alreadyApplied = certificationExamApplications.some((item) =>
-    item.examId === examId && item.employeeId === identity.employeeId
+    item.examId === examId
+    && String(item.email || "").trim().toLowerCase() === identityEmail
   );
   if (alreadyApplied) {
     window.alert("이미 접수한 시험입니다.");
@@ -5645,12 +5762,12 @@ function buildCompanyOptions() {
   if (elements.qualificationTypeFilter) {
     elements.qualificationTypeFilter.innerHTML = [
       '<option value="all">전체 자격</option>',
-      ...qualificationTypeOptions.map((type) => `<option value="${type}">${type}</option>`),
+      ...qualificationRecordTypeOptions.map((type) => `<option value="${type}">${type}</option>`),
     ].join("");
   }
 
   if (elements.qualificationType) {
-    elements.qualificationType.innerHTML = qualificationTypeOptions
+    elements.qualificationType.innerHTML = qualificationRecordTypeOptions
       .map((type) => `<option value="${type}">${type}</option>`)
       .join("");
   }
@@ -5661,6 +5778,7 @@ function buildCompanyOptions() {
   }
 
   renderQualificationGradeFilterOptions();
+  syncQualificationCustomNameField(elements.qualificationType?.value || qualificationTypeOptions[0]);
   renderQualificationGradeFieldOptions(elements.qualificationType?.value || qualificationTypeOptions[0]);
   if (elements.certificationExamType) {
     renderCertificationExamGradeFieldOptions(elements.certificationExamType.value || qualificationTypeOptions[0]);
@@ -5696,11 +5814,39 @@ function renderProjectYearFilterOptions() {
 
 function getQualificationYearOptions() {
   return Array.from(new Set(
-    qualifications
+    getFilteredQualifications({ ignoreFilters: true })
       .map((qualification) => String(qualification.acquiredDate || "").slice(0, 4))
       .filter((year) => /^\d{4}$/.test(year)),
   ))
     .sort((left, right) => right.localeCompare(left));
+}
+
+function getQualificationTypeFilterOptions() {
+  const dataTypes = Array.from(new Set(
+    getFilteredQualifications({ ignoreFilters: true })
+      .map((qualification) => String(qualification.qualificationDisplayName || qualification.qualificationType || "").trim())
+      .filter(Boolean),
+  ));
+  const defaultTypes = qualificationRecordTypeOptions.filter((type) => dataTypes.includes(type));
+  const customTypes = dataTypes
+    .filter((type) => !qualificationRecordTypeOptions.includes(type))
+    .sort((left, right) => left.localeCompare(right, "ko-KR"));
+  return [...defaultTypes, ...customTypes];
+}
+
+function renderQualificationTypeFilterOptions() {
+  if (!elements.qualificationTypeFilter) {
+    return;
+  }
+  const typeOptions = getQualificationTypeFilterOptions();
+  if (state.qualificationType !== "all" && !typeOptions.includes(state.qualificationType)) {
+    state.qualificationType = "all";
+  }
+  elements.qualificationTypeFilter.innerHTML = [
+    '<option value="all">전체 자격</option>',
+    ...typeOptions.map((type) => `<option value="${type}">${type}</option>`),
+  ].join("");
+  elements.qualificationTypeFilter.value = state.qualificationType;
 }
 
 function renderQualificationYearFilterOptions() {
@@ -5803,7 +5949,7 @@ function renderMetrics() {
 }
 
 function renderDashboardSimpleList(targetNode, items = [], emptyMessage = "표시할 항목이 없습니다.", options = {}) {
-  const { showTypeBadge = false } = options;
+  const { showTypeBadge = false, showNewBadge = false } = options;
   if (!targetNode) {
     return;
   }
@@ -5817,7 +5963,10 @@ function renderDashboardSimpleList(targetNode, items = [], emptyMessage = "표�
         ${showTypeBadge
     ? `<span style="display:inline-flex;align-items:center;justify-content:center;min-width:34px;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:800;line-height:1;white-space:nowrap;color:${item.type === "exam" ? "#15503a" : "#1b4f9d"};background:${item.type === "exam" ? "#e8f8f0" : "#e9f1ff"};">${item.type === "exam" ? "시험" : "교육"}</span>`
     : ""}
-        <p style="margin:0;font-weight:600;font-size:15px;color:#102f63;line-height:1.2;min-width:0;">${escapeHtml(item.title || "-")}</p>
+        <p style="margin:0;font-weight:600;font-size:15px;color:#102f63;line-height:1.2;min-width:0;">
+          ${escapeHtml(item.title || "-")}
+          ${showNewBadge && isWithinRecentDays(item.date, dashboardNewBadgeDays) ? '<span class="dashboard-new-chip" aria-label="신규 항목">New</span>' : ""}
+        </p>
       </div>
       <span style="font-size:12px;font-weight:600;color:#5e79a5;white-space:nowrap;line-height:1;">${escapeHtml(formatDateWithYear(item.date || toIsoDate(REFERENCE_DATE)))}</span>
     </article>
@@ -5856,6 +6005,7 @@ function renderDashboardPage() {
       .sort((left, right) => String(right.date).localeCompare(String(left.date)))
       .slice(0, 7),
     "등록된 공지사항이 없습니다.",
+    { showNewBadge: true },
   );
 
   const todayToken = toIsoDate(REFERENCE_DATE);
@@ -5883,7 +6033,7 @@ function renderDashboardPage() {
     elements.dashboardMilestoneList,
     calendarEvents,
     "캘린더 일정 데이터가 없습니다.",
-    { showTypeBadge: true },
+    { showTypeBadge: true, showNewBadge: true },
   );
 
   const innovationRows = companyOptions.map((company) => {
@@ -6042,6 +6192,13 @@ function renderAdminDashboardDataBoards() {
   }
 }
 
+function getSelectedAdminNoticeId() {
+  if (state.selectedAdminNoticeId && dashboardNoticeItems.some((item) => item.id === state.selectedAdminNoticeId)) {
+    return state.selectedAdminNoticeId;
+  }
+  return dashboardNoticeItems[0]?.id ?? null;
+}
+
 function getQualificationTypeClass(type) {
   if (type === "6σ") {
     return "type-six-sigma";
@@ -6102,9 +6259,16 @@ function renderQualificationGradeFilterOptions() {
     return;
   }
 
-  const gradeOptions = state.qualificationType === "all"
-    ? getAllQualificationGrades()
-    : getQualificationGradeList(state.qualificationType);
+  const gradeOptions = Array.from(new Set(
+    getFilteredQualifications({ ignoreFilters: true })
+      .filter((qualification) =>
+        state.qualificationType === "all"
+        || (isBaseQualificationType(state.qualificationType)
+          ? qualification.qualificationType === state.qualificationType
+          : qualification.qualificationDisplayName === state.qualificationType))
+      .map((qualification) => String(qualification.grade || "").trim())
+      .filter(Boolean),
+  ));
 
   if (state.qualificationGrade !== "all" && !gradeOptions.includes(state.qualificationGrade)) {
     state.qualificationGrade = "all";
@@ -6122,13 +6286,44 @@ function renderQualificationGradeFieldOptions(type, selectedGrade = "") {
     return;
   }
 
-  const gradeOptions = getQualificationGradeList(type);
+  const gradeOptions = getQualificationGradeList(type).length
+    ? getQualificationGradeList(type)
+    : ["-"];
   const safeGrade = gradeOptions.includes(selectedGrade) ? selectedGrade : (gradeOptions[0] || "");
 
   elements.qualificationGrade.innerHTML = gradeOptions
     .map((grade) => `<option value="${grade}">${grade}</option>`)
     .join("");
   elements.qualificationGrade.value = safeGrade;
+}
+
+function syncQualificationCustomNameField(type) {
+  if (!elements.qualificationCustomNameField || !elements.qualificationCustomName) {
+    return;
+  }
+  const isOtherType = type === qualificationOtherType;
+  elements.qualificationCustomNameField.hidden = !isOtherType;
+  elements.qualificationCustomName.required = isOtherType;
+  if (!isOtherType) {
+    elements.qualificationCustomName.value = "";
+  }
+}
+
+function syncQualificationEmailField() {
+  if (!elements.qualificationEmail) {
+    return;
+  }
+  const identity = getEducationCurrentIdentity();
+  const canManage = hasQualificationManagementAccess();
+  if (!canManage) {
+    elements.qualificationEmail.value = String(identity.email || "").trim().toLowerCase();
+    elements.qualificationEmail.readOnly = true;
+  } else {
+    elements.qualificationEmail.readOnly = false;
+    if (!elements.qualificationEmail.value && identity.email) {
+      elements.qualificationEmail.value = String(identity.email || "").trim().toLowerCase();
+    }
+  }
 }
 
 function getCertificationOperationStatusLabel(status) {
@@ -6164,7 +6359,7 @@ function renderCertificationExamTable() {
   if (!certificationExams.length) {
     elements.certificationExamTableBody.innerHTML = `
       <tr>
-        <td colspan="5" class="empty-cell">등록된 자격검정 운영 항목이 없습니다. 상단의 등록 버튼으로 시작하세요.</td>
+        <td colspan="5" class="empty-cell">등록된 자격검정 관리 항목이 없습니다. 상단의 등록 버튼으로 시작하세요.</td>
       </tr>
     `;
     return;
@@ -6192,7 +6387,10 @@ function renderCertificationExamTable() {
           </td>
           <td>
             <div class="qualification-title-block">
-              <strong>${escapeHtml(exam.examTitle || "-")}</strong>
+              <strong>
+                ${escapeHtml(exam.examTitle || "-")}
+                ${isWithinRecentDays(exam.addedAt, managementNewBadgeDays) ? '<span class="management-new-chip" aria-label="신규 등록">New</span>' : ""}
+              </strong>
               <span class="qualification-title-meta">${escapeHtml(`${exam.examType || "-"} ${exam.examGrade || "-"}`)}</span>
             </div>
           </td>
@@ -6308,6 +6506,7 @@ function renderCertificationApplicantTable() {
     const examTitle = row.exam?.examTitle || `${row.exam?.examType || "시험"} ${row.exam?.examGrade || ""}`.trim();
     const examSubtitle = `${row.exam?.examType || "-"} · ${row.exam?.examGrade || "-"}`;
     const isChecked = hasCheckedCertificationApplicant(row.id);
+    const isNewApplicant = isWithinRecentDays(row.appliedAt, managementNewBadgeDays);
     return `
       <tr>
         <td class="selection-cell qualification-selection-cell">
@@ -6328,7 +6527,10 @@ function renderCertificationApplicantTable() {
         </td>
         <td>
           <div class="qualification-title-block">
-            <strong>${escapeHtml(`${row.name || "-"} / ${row.position || "-"}`)}</strong>
+            <strong>
+              ${escapeHtml(`${row.name || "-"} / ${row.position || "-"}`)}
+              ${isNewApplicant ? '<span class="management-new-chip" aria-label="신규 접수">New</span>' : ""}
+            </strong>
             <span class="qualification-title-meta">${escapeHtml(`${row.company || "-"} / ${row.department || "-"}`)}</span>
           </div>
         </td>
@@ -6362,16 +6564,42 @@ function renderCertificationApplicantTable() {
 function getFilteredQualifications(options = {}) {
   const { ignoreFilters = false } = options;
   const qualificationRecords = [
-    ...qualifications.map((item) => ({ ...item, sourceType: "internal" })),
+    ...qualifications.map((item) => {
+      const qualificationType = normalizeQualificationType(item.qualificationType);
+      const qualificationCustomName = qualificationType === qualificationOtherType
+        ? String(item.qualificationCustomName || item.qualificationDisplayName || "").trim()
+        : "";
+      return {
+        ...item,
+        qualificationType,
+        qualificationCustomName,
+        qualificationDisplayName: getQualificationDisplayName(qualificationType, qualificationCustomName),
+        qualificationAddedAt: isValidDateString(item.qualificationAddedAt) ? item.qualificationAddedAt : "",
+        email: String(item.email || "").trim().toLowerCase(),
+        sourceType: "internal",
+      };
+    }),
     ...externalQualificationHistories.map((item, index) => ({
       id: item.id || `EXT-QL-${String(index + 1).padStart(3, "0")}`,
-      qualificationType: item.qualificationName || "-",
+      qualificationType: isBaseQualificationType(item.qualificationType || item.qualificationName)
+        ? (item.qualificationType || item.qualificationName)
+        : qualificationOtherType,
+      qualificationCustomName: isBaseQualificationType(item.qualificationType || item.qualificationName)
+        ? ""
+        : String(item.qualificationName || "").trim(),
+      qualificationDisplayName: isBaseQualificationType(item.qualificationType || item.qualificationName)
+        ? (item.qualificationType || item.qualificationName)
+        : (String(item.qualificationName || "").trim() || qualificationOtherType),
       grade: item.grade || "-",
       certificateNo: item.certificateNo || "",
+      email: String(item.email || "").trim().toLowerCase(),
       company: item.company || "",
       department: "",
       name: item.name || "",
       acquiredDate: item.acquiredDate || "",
+      qualificationAddedAt: isValidDateString(item.createdAt)
+        ? item.createdAt
+        : (isValidDateString(item.acquiredDate) ? item.acquiredDate : ""),
       sourceType: "external",
     })),
   ];
@@ -6382,9 +6610,10 @@ function getFilteredQualifications(options = {}) {
         return true;
       }
       const matchesQuery = [
-        qualification.qualificationType,
+        qualification.qualificationDisplayName || qualification.qualificationType,
         qualification.grade,
         qualification.certificateNo,
+        qualification.email,
         qualification.company,
         qualification.department,
         qualification.name,
@@ -6393,7 +6622,10 @@ function getFilteredQualifications(options = {}) {
         .toLowerCase()
         .includes(state.qualificationSearch.toLowerCase());
 
-      const matchesType = state.qualificationType === "all" || qualification.qualificationType === state.qualificationType;
+      const matchesType = state.qualificationType === "all"
+        || (isBaseQualificationType(state.qualificationType)
+          ? qualification.qualificationType === state.qualificationType
+          : qualification.qualificationDisplayName === state.qualificationType);
       const matchesGrade = state.qualificationGrade === "all" || qualification.grade === state.qualificationGrade;
       const matchesCompany = state.qualificationCompany === "all" || qualification.company === state.qualificationCompany;
       const qualificationYear = String(qualification.acquiredDate || "").slice(0, 4);
@@ -6475,15 +6707,14 @@ function renderQualificationTable(filteredQualifications) {
       const isChecked = hasCheckedQualification(qualification.id);
       const qualificationDepartment = qualification.department || "-";
       const qualificationCompany = qualification.company || "-";
-      const qualificationName = qualification.qualificationType || "-";
+      const qualificationName = qualification.qualificationDisplayName || qualification.qualificationType || "-";
       const qualificationGrade = qualification.grade || "-";
-      const qualificationTypeClass = getQualificationTypeClass(qualificationName);
+      const qualificationTypeClass = getQualificationTypeClass(qualification.qualificationType);
       const ownerName = qualification.name || "-";
       const certificateNo = qualification.certificateNo || "-";
       const isExternal = qualification.sourceType === "external";
-      const selectionMarkup = isExternal
-        ? '<span class="qualification-selection-placeholder">-</span>'
-        : `<span
+      const isNewQualification = isWithinRecentDays(qualification.qualificationAddedAt, 7);
+      const selectionMarkup = `<span
               class="selection-box ${isChecked ? "is-selected" : ""}"
               data-qualification-select="${qualification.id}"
               role="button"
@@ -6493,6 +6724,9 @@ function renderQualificationTable(filteredQualifications) {
             ></span>`;
       const sourceBadge = isExternal
         ? '<span class="qualification-source-chip">외부</span>'
+        : "";
+      const newBadge = isNewQualification
+        ? '<span class="qualification-new-chip" aria-label="신규 등록">New</span>'
         : "";
 
       return `
@@ -6505,6 +6739,7 @@ function renderQualificationTable(filteredQualifications) {
               <strong><span class="qualification-type-badge ${qualificationTypeClass}">${escapeHtml(qualificationName)}</span></strong>
               <span class="qualification-title-meta">${escapeHtml(qualificationGrade)} ${sourceBadge}</span>
             </div>
+            ${newBadge}
           </td>
           <td class="qualification-cert-cell">${escapeHtml(certificateNo)}</td>
           <td class="qualification-company-cell">
@@ -6524,14 +6759,14 @@ function renderQualificationTable(filteredQualifications) {
 }
 
 function buildQualificationCompanySummary(filteredQualifications) {
-  const typeTokens = [...qualificationTypeOptions, "기타"];
+  const typeTokens = [...qualificationTypeOptions, qualificationOtherType];
   return companyOptions
     .map((company) => {
       const companyItems = filteredQualifications.filter((qualification) => qualification.company === company);
       const typeCounts = typeTokens.map((type) => ({
         type,
-        count: type === "기타"
-          ? companyItems.filter((qualification) => !qualificationTypeOptions.includes(qualification.qualificationType)).length
+        count: type === qualificationOtherType
+          ? companyItems.filter((qualification) => qualification.qualificationType === qualificationOtherType).length
           : companyItems.filter((qualification) => qualification.qualificationType === type).length,
       }));
 
@@ -6551,8 +6786,8 @@ function buildQualificationTypeSummary(filteredQualifications) {
     total: filteredQualifications.filter((qualification) => qualification.qualificationType === type).length,
   }));
   const otherTotal = filteredQualifications.filter((qualification) =>
-    !qualificationTypeOptions.includes(qualification.qualificationType)).length;
-  return [...baseSummary, { type: "기타", total: otherTotal }];
+    qualification.qualificationType === qualificationOtherType).length;
+  return [...baseSummary, { type: qualificationOtherType, total: otherTotal }];
 }
 
 function renderQualificationCompanyBoard(filteredQualifications) {
@@ -6568,7 +6803,7 @@ function renderQualificationCompanyBoard(filteredQualifications) {
   }
 
   const maxTotal = Math.max(...summary.map((entry) => entry.total), 1);
-  const legend = [...qualificationTypeOptions, "기타"]
+  const legend = [...qualificationTypeOptions, qualificationOtherType]
     .map((type) => {
       const typeClass = getQualificationTypeClass(type);
       return `
@@ -6725,6 +6960,13 @@ function renderEducationCalendarPage() {
   if (elements.educationMonthLabel) {
     elements.educationMonthLabel.textContent = `${monthCursor.getFullYear()}년 ${monthCursor.getMonth() + 1}월`;
   }
+  const calendarFilter = ["all", "education", "certification"].includes(state.educationCalendarFilter)
+    ? state.educationCalendarFilter
+    : "all";
+  state.educationCalendarFilter = calendarFilter;
+  elements.educationCalendarFilterAll?.classList.toggle("is-active", calendarFilter === "all");
+  elements.educationCalendarFilterEducation?.classList.toggle("is-active", calendarFilter === "education");
+  elements.educationCalendarFilterCertification?.classList.toggle("is-active", calendarFilter === "certification");
 
   if (!isValidDateString(state.selectedEducationDate)
     || !state.selectedEducationDate.startsWith(getEducationMonthKey(monthCursor))) {
@@ -6770,7 +7012,9 @@ function renderEducationCalendarPage() {
     const dayEvents = [
       ...daySchedules.map((schedule) => ({ kind: "education", schedule })),
       ...dayExams.map((exam) => ({ kind: "certification", exam })),
-    ];
+    ].filter((eventItem) => (
+      calendarFilter === "all" || eventItem.kind === calendarFilter
+    ));
     const isExpanded = state.educationExpandedDate === dateToken;
     const visibleCount = isExpanded ? dayEvents.length : 2;
     const hiddenCount = Math.max(0, dayEvents.length - visibleCount);
@@ -6785,7 +7029,8 @@ function renderEducationCalendarPage() {
           const activeClass = schedule.id === state.selectedEducationScheduleId ? "is-active" : "";
           const chipStatus = getEducationCalendarChipStatus(schedule);
           return `
-            <button type="button" class="education-event-chip ${activeClass}" data-education-schedule-id="${schedule.id}" title="${escapeHtml(title)}">
+            <button type="button" class="education-event-chip is-education ${activeClass}" data-education-schedule-id="${schedule.id}" title="${escapeHtml(title)}">
+              <span class="education-event-type-badge is-education">📘 교육</span>
               <span class="education-event-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
               <span class="education-event-status ${chipStatus.className}">${escapeHtml(`${chipStatus.icon} ${chipStatus.label}`)}</span>
             </button>
@@ -6798,7 +7043,8 @@ function renderEducationCalendarPage() {
           ? "is-active"
           : "";
         return `
-          <button type="button" class="education-event-chip ${activeClass}" data-certification-exam-id="${exam.id}" title="${escapeHtml(examTitle)}">
+          <button type="button" class="education-event-chip is-certification ${activeClass}" data-certification-exam-id="${exam.id}" title="${escapeHtml(examTitle)}">
+            <span class="education-event-type-badge is-certification">📝 시험</span>
             <span class="education-event-title" title="${escapeHtml(examTitle)}">${escapeHtml(examTitle)}</span>
             <span class="education-event-status ${chipStatus.className}">${escapeHtml(`${chipStatus.icon} ${chipStatus.label}`)}</span>
           </button>
@@ -6889,8 +7135,10 @@ function renderEducationCalendarPage() {
     const applicantsCount = getCertificationExamApplicationCount(selectedExam.id);
     const capacity = Math.max(0, parseNumber(selectedExam.capacity, 0));
     const chipStatus = getCertificationExamCalendarChipStatus(selectedExam);
+    const identityEmail = String(identity.email || "").trim().toLowerCase();
     const alreadyApplied = certificationExamApplications.some((item) =>
-      item.examId === selectedExam.id && item.employeeId === identity.employeeId
+      item.examId === selectedExam.id
+      && String(item.email || "").trim().toLowerCase() === identityEmail
     );
     const canApply = hasEducationApplyAccess();
     const canRecruitApply = chipStatus.label === "접수중";
@@ -6976,16 +7224,20 @@ function renderEducationCalendarPage() {
 
   const selectedCourse = getEducationCourseById(selectedSchedule.courseId);
   const identity = getEducationCurrentIdentity();
+  const identityEmail = String(identity.email || "").trim().toLowerCase();
   const enrollmentCount = getEducationEnrollmentCount(selectedSchedule.id);
   const confirmedEnrollmentCount = getEducationConfirmedEnrollmentCount(selectedSchedule.id);
   const waitlistCount = getEducationWaitlistCount(selectedSchedule.id);
   const capacity = Math.max(0, parseNumber(selectedSchedule.capacity, 0));
   const waitlistLimit = getEducationWaitlistLimit(capacity);
   const alreadyApplied = educationEnrollments.some((enrollment) =>
-    enrollment.scheduleId === selectedSchedule.id && enrollment.employeeId === identity.employeeId
+    enrollment.scheduleId === selectedSchedule.id
+    && String(enrollment.email || "").trim().toLowerCase() === identityEmail
   );
   const alreadyWaitlisted = educationEnrollments.some((enrollment) =>
-    enrollment.scheduleId === selectedSchedule.id && enrollment.employeeId === identity.employeeId && enrollment.waitlisted
+    enrollment.scheduleId === selectedSchedule.id
+    && String(enrollment.email || "").trim().toLowerCase() === identityEmail
+    && enrollment.waitlisted
   );
   const canApply = hasEducationApplyAccess();
   const recruitStatusKey = getEducationRecruitStatusKey(selectedSchedule);
@@ -7212,10 +7464,7 @@ function renderMyLearningPage() {
   const externalEducationRows = externalEducationHistories
     .filter((item) => {
       const itemEmail = String(item.email || "").trim().toLowerCase();
-      if (identityEmail && itemEmail) {
-        return itemEmail === identityEmail;
-      }
-      return item.name === identity.name && item.company === identity.company;
+      return Boolean(identityEmail) && Boolean(itemEmail) && itemEmail === identityEmail;
     })
     .map((item) => ({
       enrollment: {
@@ -7240,9 +7489,8 @@ function renderMyLearningPage() {
     .sort((left, right) => String(right.schedule?.endDate || "").localeCompare(String(left.schedule?.endDate || "")));
   const examRows = certificationExamApplications
     .filter((application) => (
-      ((identityEmail && String(application.email || "").trim().toLowerCase() === identityEmail)
-      || application.employeeId === identity.employeeId
-      || (application.name === identity.name && application.company === identity.company))
+      Boolean(identityEmail)
+      && String(application.email || "").trim().toLowerCase() === identityEmail
     ))
     .map((application) => {
       const exam = getCertificationExamById(application.examId);
@@ -7265,6 +7513,63 @@ function renderMyLearningPage() {
         canCancel: statusLabel === "신청완료" && isCancelableInPeriod(applicationStartDate, applicationEndDate),
       };
     });
+  const externalQualificationRows = externalQualificationHistories
+    .filter((item) => {
+      const itemEmail = String(item.email || "").trim().toLowerCase();
+      return Boolean(identityEmail) && Boolean(itemEmail) && itemEmail === identityEmail;
+    })
+    .map((item) => ({
+      id: item.id,
+      qualificationType: item.qualificationName || "-",
+      grade: item.grade || "-",
+      certificateNo: item.certificateNo || "-",
+      acquiredDate: item.acquiredDate ? formatDateWithYear(item.acquiredDate) : "-",
+      statusLabel: item.status || "신청완료",
+      statusClass: item.status === "합격" ? "is-completed" : (item.status === "불합격" ? "is-failed" : "is-applied"),
+      canCancel: false,
+    }));
+  const internalQualificationRows = qualifications
+    .filter((item) => {
+      const itemEmail = String(item.email || "").trim().toLowerCase();
+      return Boolean(identityEmail) && Boolean(itemEmail) && itemEmail === identityEmail;
+    })
+    .map((item) => ({
+      id: `QL-${item.id}`,
+      qualificationType: item.qualificationDisplayName || item.qualificationType || "-",
+      grade: item.grade || "-",
+      certificateNo: item.certificateNo || "-",
+      acquiredDate: item.acquiredDate ? formatDateWithYear(item.acquiredDate) : "-",
+      statusLabel: "합격",
+      statusClass: "is-completed",
+      canCancel: false,
+    }));
+  const combinedQualificationRows = [...examRows, ...internalQualificationRows, ...externalQualificationRows];
+  const educationYearTokens = allEducationRows
+    .map((row) => String(row.schedule?.endDate || row.schedule?.startDate || "").slice(0, 4))
+    .filter((year) => /^\d{4}$/.test(year));
+  const qualificationYearTokens = combinedQualificationRows
+    .map((row) => String(row.acquiredDate || "").slice(0, 4))
+    .filter((year) => /^\d{4}$/.test(year));
+  const myLearningYearOptions = Array.from(new Set([...educationYearTokens, ...qualificationYearTokens]))
+    .sort((left, right) => right.localeCompare(left));
+  if (state.myLearningYear !== "all" && !myLearningYearOptions.includes(state.myLearningYear)) {
+    state.myLearningYear = "all";
+  }
+  if (elements.myLearningYearFilter) {
+    elements.myLearningYearFilter.innerHTML = [
+      '<option value="all">전체</option>',
+      ...myLearningYearOptions.map((year) => `<option value="${year}">${year}년</option>`),
+    ].join("");
+    elements.myLearningYearFilter.value = state.myLearningYear;
+  }
+  const filteredEducationRows = state.myLearningYear === "all"
+    ? allEducationRows
+    : allEducationRows.filter((row) => (
+      String(row.schedule?.endDate || row.schedule?.startDate || "").slice(0, 4) === state.myLearningYear
+    ));
+  const filteredQualificationRows = state.myLearningYear === "all"
+    ? combinedQualificationRows
+    : combinedQualificationRows.filter((row) => String(row.acquiredDate || "").slice(0, 4) === state.myLearningYear);
 
   const currentYear = String(REFERENCE_DATE.getFullYear());
   const currentYearRows = allEducationRows.filter((row) => {
@@ -7275,7 +7580,10 @@ function renderMyLearningPage() {
   const inProgressRows = currentYearRows.filter((row) => !row.enrollment.completed && row.schedule?.status === "in_progress");
   const yearlyCompletedHours = completedRows
     .reduce((sum, row) => sum + row.hoursValue, 0);
-  const totalTrainingHours = allEducationRows.reduce((sum, row) => sum + row.hoursValue, 0);
+  const totalTrainingHours = filteredEducationRows.reduce((sum, row) => sum + row.hoursValue, 0);
+  const completedTrainingHours = filteredEducationRows
+    .filter((row) => row.enrollment.completed)
+    .reduce((sum, row) => sum + row.hoursValue, 0);
 
   if (elements.myLearningMetricApplied) {
     elements.myLearningMetricApplied.textContent = String(currentYearRows.length);
@@ -7306,11 +7614,11 @@ function renderMyLearningPage() {
     }
   }
 
-  if (!rows.some((row) => row.enrollment.id === state.myLearningEvaluationEnrollmentId)) {
+  if (!filteredEducationRows.some((row) => row.enrollment.id === state.myLearningEvaluationEnrollmentId)) {
     state.myLearningEvaluationEnrollmentId = null;
   }
 
-  const learningRowsHtml = allEducationRows.map((row) => {
+  const learningRowsHtml = filteredEducationRows.map((row) => {
       const completionLabel = row.enrollment.completed ? "수료완료" : "미수료";
       const completionClass = row.enrollment.completed ? "is-completed" : "is-incomplete";
       const isWaitlisted = Boolean(row.enrollment.waitlisted) || row.isExternal;
@@ -7348,12 +7656,13 @@ function renderMyLearningPage() {
       `;
     })
     .join("");
-  elements.myLearningTableBody.innerHTML = allEducationRows.length
+  elements.myLearningTableBody.innerHTML = filteredEducationRows.length
     ? `${learningRowsHtml}
       <tr class="learning-summary-row">
-        <td colspan="3"><strong>교육시간 합계</strong></td>
-        <td class="learning-hours-cell"><strong>${escapeHtml(`${totalTrainingHours}시간`)}</strong></td>
-        <td colspan="2" class="learning-summary-note"></td>
+        <td colspan="2" class="learning-summary-label"><strong>교육시간 합계</strong></td>
+        <td class="learning-hours-cell learning-summary-hours"><strong>${escapeHtml(`${totalTrainingHours}시간`)}</strong></td>
+        <td colspan="2" class="learning-summary-completed"><strong>${escapeHtml(`(교육이수시간: ${completedTrainingHours}시간)`)}</strong></td>
+        <td class="learning-summary-note"></td>
       </tr>
     `
     : `
@@ -7362,26 +7671,7 @@ function renderMyLearningPage() {
       </tr>
     `;
 
-  const externalQualificationRows = externalQualificationHistories
-    .filter((item) => {
-      const itemEmail = String(item.email || "").trim().toLowerCase();
-      if (identityEmail && itemEmail) {
-        return itemEmail === identityEmail;
-      }
-      return item.name === identity.name && item.company === identity.company;
-    })
-    .map((item) => ({
-      id: item.id,
-      qualificationType: item.qualificationName || "-",
-      grade: item.grade || "-",
-      certificateNo: item.certificateNo || "-",
-      acquiredDate: item.acquiredDate ? formatDateWithYear(item.acquiredDate) : "-",
-      statusLabel: item.status || "신청완료",
-      statusClass: item.status === "합격" ? "is-completed" : (item.status === "불합격" ? "is-failed" : "is-applied"),
-      canCancel: false,
-    }));
-  const combinedQualificationRows = [...examRows, ...externalQualificationRows];
-  const certificationRowsHtml = combinedQualificationRows
+  const certificationRowsHtml = filteredQualificationRows
     .map((row) => {
       const cancelCellMarkup = row.canCancel
         ? `<button type="button" class="ghost-button learning-cancel-button" data-learning-cancel="exam:${row.id}">취소</button>`
@@ -7398,7 +7688,7 @@ function renderMyLearningPage() {
       `;
     })
     .join("");
-  elements.myLearningCertificationTableBody.innerHTML = combinedQualificationRows.length
+  elements.myLearningCertificationTableBody.innerHTML = filteredQualificationRows.length
     ? certificationRowsHtml
     : `
       <tr>
@@ -7409,7 +7699,7 @@ function renderMyLearningPage() {
   if (!state.myLearningEvaluationEnrollmentId) {
     elements.myLearningEvaluationPanel.hidden = true;
   } else {
-    const selectedRow = rows.find((row) => row.enrollment.id === state.myLearningEvaluationEnrollmentId) || null;
+    const selectedRow = filteredEducationRows.find((row) => row.enrollment.id === state.myLearningEvaluationEnrollmentId) || null;
     if (!selectedRow || selectedRow.enrollment.waitlisted) {
       state.myLearningEvaluationEnrollmentId = null;
       elements.myLearningEvaluationPanel.hidden = true;
@@ -7910,6 +8200,8 @@ function upsertEducationAdminSchedule(scheduleData) {
   const normalized = normalizeEducationSchedule({
     ...previousSchedule,
     ...scheduleData,
+    addedAt: previousSchedule?.addedAt
+      || (state.educationAdminModalMode === "edit" ? "" : toIsoDate(REFERENCE_DATE)),
     id: state.educationAdminModalMode === "edit"
       ? state.editingEducationAdminId
       : (scheduleData.id || generateEducationScheduleId()),
@@ -8291,7 +8583,9 @@ function renderEducationEnrollmentBoard(filteredRows = []) {
   }
 
   elements.educationEnrollmentTableBody.innerHTML = rows
-    .map((row) => `
+    .map((row) => {
+      const isNewEnrollment = isWithinRecentDays(row.enrollment.appliedAt, managementNewBadgeDays);
+      return `
       <tr>
         <td>
           <input
@@ -8311,7 +8605,10 @@ function renderEducationEnrollmentBoard(filteredRows = []) {
         </td>
         <td title="${escapeHtml(`${row.enrollment.name || "-"} / ${row.enrollment.position || "-"}`)}">
           <div class="education-enrollment-cell-stack">
-            <strong>${escapeHtml(row.enrollment.name || "-")}</strong>
+            <strong>
+              ${escapeHtml(row.enrollment.name || "-")}
+              ${isNewEnrollment ? '<span class="management-new-chip" aria-label="신규 접수">New</span>' : ""}
+            </strong>
             <span>${escapeHtml(row.enrollment.position || "-")}</span>
           </div>
         </td>
@@ -8323,7 +8620,8 @@ function renderEducationEnrollmentBoard(filteredRows = []) {
         <td title="${escapeHtml(formatDateWithYear(row.enrollment.appliedAt))}">${escapeHtml(formatDateWithYear(row.enrollment.appliedAt))}</td>
         <td title="${row.enrollment.completed ? "수료완료" : "미수료"}">${row.enrollment.completed ? "수료완료" : "미수료"}</td>
       </tr>
-    `)
+    `;
+    })
     .join("");
 }
 
@@ -8823,6 +9121,7 @@ function renderEducationAdminPage() {
       const educationTime = row.daysText && row.hoursText
         ? `${row.daysText} / ${row.hoursText}`
         : (row.hoursText || row.daysText || "-");
+      const isNewSchedule = isWithinRecentDays(row.schedule.addedAt, managementNewBadgeDays);
 
       return `
         <tr class="education-admin-row ${isSelected ? "is-selected" : ""}" data-education-admin-id="${row.schedule.id}">
@@ -8838,7 +9137,10 @@ function renderEducationAdminPage() {
           </td>
           <td class="education-admin-course-cell">
             <div class="education-admin-course-block">
-              <strong>${escapeHtml(row.smallCategory)}</strong>
+              <strong>
+                ${escapeHtml(row.smallCategory)}
+                ${isNewSchedule ? '<span class="management-new-chip" aria-label="신규 등록">New</span>' : ""}
+              </strong>
               <span class="education-admin-course-meta">${escapeHtml(`${row.majorCategory} · ${row.middleCategory}`)}</span>
             </div>
           </td>
@@ -9068,7 +9370,9 @@ function syncQualificationActionButtons(filteredQualifications) {
   const canManageQualifications = hasQualificationManagementAccess();
   const selectedQualification = filteredQualifications.find((qualification) => qualification.id === state.selectedQualificationId) || null;
   const hasSelectedQualification = Boolean(selectedQualification && selectedQualification.sourceType !== "external");
-  const hasCheckedQualifications = getSelectedQualificationIds().length > 0;
+  const selectedCheckedQualifications = getSelectedQualificationIds()
+    .filter((id) => filteredQualifications.some((qualification) => qualification.id === id));
+  const hasCheckedQualifications = selectedCheckedQualifications.length > 0;
 
   if (elements.addQualificationButton) {
     elements.addQualificationButton.hidden = !canManageQualifications;
@@ -9082,7 +9386,8 @@ function syncQualificationActionButtons(filteredQualifications) {
 
   if (elements.deleteQualificationButton) {
     elements.deleteQualificationButton.hidden = !canManageQualifications;
-    elements.deleteQualificationButton.disabled = !canManageQualifications || (!hasSelectedQualification && !hasCheckedQualifications);
+    const hasAnyDeletionTarget = hasCheckedQualifications || Boolean(selectedQualification);
+    elements.deleteQualificationButton.disabled = !canManageQualifications || !hasAnyDeletionTarget;
   }
 }
 
@@ -9662,6 +9967,8 @@ function upsertCertificationExam(examData) {
   const normalized = normalizeCertificationExam({
     ...previous,
     ...examData,
+    addedAt: previous?.addedAt
+      || (state.certificationExamModalMode === "edit" ? "" : toIsoDate(REFERENCE_DATE)),
   });
 
   if (state.certificationExamModalMode === "edit" && state.editingCertificationExamId) {
@@ -9713,9 +10020,13 @@ function resetQualificationForm() {
   }
 
   elements.qualificationForm.reset();
-  const nextType = state.qualificationType !== "all" ? state.qualificationType : qualificationTypeOptions[0];
+  const nextType = state.qualificationType !== "all" && qualificationRecordTypeOptions.includes(state.qualificationType)
+    ? state.qualificationType
+    : qualificationTypeOptions[0];
   elements.qualificationType.value = nextType;
+  syncQualificationCustomNameField(nextType);
   renderQualificationGradeFieldOptions(nextType);
+  syncQualificationEmailField();
   elements.qualificationCompany.value = state.qualificationCompany !== "all"
     ? state.qualificationCompany
     : companyOptions[0];
@@ -9728,6 +10039,14 @@ function populateQualificationForm(qualification) {
   }
 
   elements.qualificationType.value = qualification.qualificationType;
+  syncQualificationCustomNameField(qualification.qualificationType);
+  if (elements.qualificationCustomName) {
+    elements.qualificationCustomName.value = qualification.qualificationCustomName || "";
+  }
+  if (elements.qualificationEmail) {
+    elements.qualificationEmail.value = String(qualification.email || "").trim().toLowerCase();
+  }
+  syncQualificationEmailField();
   renderQualificationGradeFieldOptions(qualification.qualificationType, qualification.grade);
   elements.qualificationNumber.value = qualification.certificateNo;
   elements.qualificationCompany.value = qualification.company;
@@ -9742,11 +10061,25 @@ function readQualificationFormValues() {
   }
 
   const formData = new FormData(elements.qualificationForm);
-  const qualificationType = String(formData.get("qualificationType") || qualificationTypeOptions[0]);
+  const qualificationType = normalizeQualificationType(String(formData.get("qualificationType") || qualificationTypeOptions[0]));
+  const qualificationCustomName = qualificationType === qualificationOtherType
+    ? String(formData.get("qualificationCustomName") || "").trim()
+    : "";
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  if (qualificationType === qualificationOtherType && !qualificationCustomName) {
+    window.alert("기타 자격을 선택한 경우 자격증명을 입력해 주세요.");
+    throw new Error("qualification-custom-name-required");
+  }
+  if (!email) {
+    window.alert("대상자 이메일은 필수입니다.");
+    throw new Error("qualification-email-required");
+  }
 
   return {
     id: state.qualificationModalMode === "edit" ? state.editingQualificationId : undefined,
     qualificationType,
+    qualificationCustomName,
+    email,
     grade: formData.get("grade"),
     certificateNo: formData.get("certificateNo"),
     company: formData.get("company"),
@@ -9763,6 +10096,8 @@ function upsertQualification(qualificationData) {
   const normalized = normalizeQualification({
     ...previousQualification,
     ...qualificationData,
+    qualificationAddedAt: previousQualification?.qualificationAddedAt
+      || (state.qualificationModalMode === "edit" ? "" : toIsoDate(REFERENCE_DATE)),
   });
 
   if (state.qualificationModalMode === "edit" && state.editingQualificationId) {
@@ -9792,16 +10127,17 @@ function deleteQualification(qualificationId) {
 }
 
 function deleteQualifications(qualificationIds = []) {
-  const targetIds = Array.from(new Set(
-    qualificationIds.filter((qualificationId) => getQualificationById(qualificationId)),
-  ));
+  const targetIds = Array.from(new Set(qualificationIds.filter((qualificationId) => (
+    getQualificationById(qualificationId) || getExternalQualificationHistoryById(qualificationId)
+  ))));
 
   if (!targetIds.length) {
     return;
   }
 
+  const firstTarget = getQualificationById(targetIds[0]) || getExternalQualificationHistoryById(targetIds[0]);
   const shouldDelete = targetIds.length === 1
-    ? window.confirm(`"${getQualificationById(targetIds[0])?.name || "-"}"님의 자격 정보를 삭제할까요?\n삭제 후에는 현재 브라우저에서만 복구가 가능합니다.`)
+    ? window.confirm(`"${firstTarget?.name || "-"}"님의 자격 정보를 삭제할까요?\n삭제 후에는 현재 브라우저에서만 복구가 가능합니다.`)
     : window.confirm(`선택한 자격 정보 ${targetIds.length}건을 삭제할까요?\n삭제 후에는 현재 브라우저에서만 복구가 가능합니다.`);
 
   if (!shouldDelete) {
@@ -9809,14 +10145,16 @@ function deleteQualifications(qualificationIds = []) {
   }
 
   qualifications = qualifications.filter((item) => !targetIds.includes(item.id));
+  externalQualificationHistories = externalQualificationHistories.filter((item) => !targetIds.includes(item.id));
   state.selectedQualificationIds = getSelectedQualificationIds().filter((id) => !targetIds.includes(id));
   saveQualifications();
+  saveExternalQualificationHistories();
 
   if (targetIds.includes(state.selectedQualificationId)) {
-    state.selectedQualificationId = qualifications[0]?.id ?? null;
+    state.selectedQualificationId = qualifications[0]?.id ?? externalQualificationHistories[0]?.id ?? null;
   }
 
-  if ((state.editingQualificationId && targetIds.includes(state.editingQualificationId)) || !qualifications.length) {
+  if ((state.editingQualificationId && targetIds.includes(state.editingQualificationId)) || (!qualifications.length && !externalQualificationHistories.length)) {
     closeQualificationModal();
   }
 
@@ -10553,6 +10891,21 @@ function bindEvents() {
     state.educationExpandedDate = null;
     render();
   });
+  elements.educationCalendarFilterAll?.addEventListener("click", () => {
+    state.educationCalendarFilter = "all";
+    state.educationExpandedDate = null;
+    render();
+  });
+  elements.educationCalendarFilterEducation?.addEventListener("click", () => {
+    state.educationCalendarFilter = "education";
+    state.educationExpandedDate = null;
+    render();
+  });
+  elements.educationCalendarFilterCertification?.addEventListener("click", () => {
+    state.educationCalendarFilter = "certification";
+    state.educationExpandedDate = null;
+    render();
+  });
 
   elements.educationCalendarGrid?.addEventListener("click", (event) => {
     const moreButton = event.target.closest("[data-education-more-date]");
@@ -10733,6 +11086,12 @@ function bindEvents() {
     state.myLearningEvaluationEnrollmentId = state.myLearningEvaluationEnrollmentId === enrollmentId
       ? null
       : enrollmentId;
+    render();
+  });
+
+  elements.myLearningYearFilter?.addEventListener("change", (event) => {
+    state.myLearningYear = String(event.target.value || "all");
+    state.myLearningEvaluationEnrollmentId = null;
     render();
   });
 
@@ -11247,7 +11606,8 @@ function bindEvents() {
   });
 
   elements.adminNoticeTableBody?.addEventListener("click", (event) => {
-    const rowNode = event.target.closest("[data-admin-notice-id]");
+    const target = event.target instanceof Element ? event.target : null;
+    const rowNode = target?.closest("[data-admin-notice-id]");
     if (!rowNode) {
       return;
     }
@@ -11291,11 +11651,13 @@ function bindEvents() {
   });
 
   elements.adminEditNoticeButton?.addEventListener("click", () => {
-    if (!state.selectedAdminNoticeId) {
+    const selectedNoticeId = getSelectedAdminNoticeId();
+    if (!selectedNoticeId) {
       window.alert("수정할 공지를 선택해 주세요.");
       return;
     }
-    const index = dashboardNoticeItems.findIndex((item) => item.id === state.selectedAdminNoticeId);
+    state.selectedAdminNoticeId = selectedNoticeId;
+    const index = dashboardNoticeItems.findIndex((item) => item.id === selectedNoticeId);
     if (index < 0) {
       return;
     }
@@ -11316,15 +11678,17 @@ function bindEvents() {
   });
 
   elements.adminDeleteNoticeButton?.addEventListener("click", () => {
-    if (!state.selectedAdminNoticeId) {
+    const selectedNoticeId = getSelectedAdminNoticeId();
+    if (!selectedNoticeId) {
       window.alert("삭제할 공지를 선택해 주세요.");
       return;
     }
+    state.selectedAdminNoticeId = selectedNoticeId;
     const shouldDelete = window.confirm("선택한 공지사항을 삭제할까요?");
     if (!shouldDelete) {
       return;
     }
-    dashboardNoticeItems = dashboardNoticeItems.filter((item) => item.id !== state.selectedAdminNoticeId);
+    dashboardNoticeItems = dashboardNoticeItems.filter((item) => item.id !== selectedNoticeId);
     state.selectedAdminNoticeId = dashboardNoticeItems[0]?.id ?? null;
     saveDashboardNotices();
     render();
@@ -11681,6 +12045,7 @@ function bindEvents() {
   });
 
   elements.qualificationType?.addEventListener("change", (event) => {
+    syncQualificationCustomNameField(event.target.value);
     renderQualificationGradeFieldOptions(event.target.value);
   });
   document.addEventListener("keydown", (event) => {
@@ -11736,7 +12101,13 @@ function bindEvents() {
       return;
     }
 
-    upsertQualification(readQualificationFormValues());
+    try {
+      upsertQualification(readQualificationFormValues());
+    } catch (error) {
+      if (error?.message !== "qualification-custom-name-required" && error?.message !== "qualification-email-required") {
+        throw error;
+      }
+    }
   });
 
   elements.certificationExamForm?.addEventListener("submit", (event) => {
@@ -11820,6 +12191,7 @@ function render() {
   syncEducationAdminMenuVisibility();
   renderProjectYearFilterOptions();
   renderQualificationYearFilterOptions();
+  renderQualificationTypeFilterOptions();
   buildEducationFilterOptions();
   const filteredProjects = getFilteredProjects();
   const filteredQualifications = getFilteredQualifications();

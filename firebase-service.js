@@ -140,6 +140,9 @@
     profileAvatar: document.querySelector("#profile-avatar"),
     profileName: document.querySelector("#profile-name"),
     profileRole: document.querySelector("#profile-role"),
+    adminSignupQueueCard: document.querySelector("#admin-signup-queue-card"),
+    adminSignupPendingCount: document.querySelector("#admin-signup-pending-count"),
+    adminSignupPendingTableBody: document.querySelector("#admin-signup-pending-table-body"),
   };
 
   const state = {
@@ -402,6 +405,7 @@
     if (!state.firebaseReady) {
       setStatusChip(TEXT.configMissing, "warning");
       updateSidebarProfile(null);
+      renderAdminSignupPendingQueue(null);
       renderBridgeApp();
       return;
     }
@@ -409,6 +413,7 @@
     if (!signedIn) {
       setStatusChip(TEXT.demoMode, "muted");
       updateSidebarProfile(null);
+      renderAdminSignupPendingQueue(null);
       renderBridgeApp();
       return;
     }
@@ -417,17 +422,20 @@
 
     if (hasAdminAccess(profile)) {
       setStatusChip(TEXT.adminMode, "success");
+      renderAdminSignupPendingQueue(state.usersCache);
       renderBridgeApp();
       return;
     }
 
     if (hasDataAccess(profile)) {
       setStatusChip(TEXT.memberMode, "success");
+      renderAdminSignupPendingQueue(null);
       renderBridgeApp();
       return;
     }
 
     setStatusChip(TEXT.pendingApproval, "warning");
+    renderAdminSignupPendingQueue(null);
     renderBridgeApp();
   }
 
@@ -685,6 +693,49 @@
     syncUsersToolbarState();
   }
 
+  function renderAdminSignupPendingQueue(usersValue = state.usersCache) {
+    const card = elements.adminSignupQueueCard;
+    const countNode = elements.adminSignupPendingCount;
+    const tableBody = elements.adminSignupPendingTableBody;
+    if (!card || !countNode || !tableBody) {
+      return;
+    }
+
+    if (!hasAdminAccess()) {
+      card.hidden = true;
+      tableBody.innerHTML = "";
+      countNode.textContent = "0건";
+      return;
+    }
+
+    card.hidden = false;
+    const pendingUsers = Object.entries(usersValue || {})
+      .map(([uid, user]) => ({ uid, ...user }))
+      .filter((user) => !user.deletedAt && normalizeRole(user.role) === ROLE_GUEST)
+      .sort((left, right) => Number(right.createdAt || 0) - Number(left.createdAt || 0));
+
+    countNode.textContent = `${pendingUsers.length}건`;
+    if (!pendingUsers.length) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="3" class="empty-cell">현재 승인 대기 중인 신규 가입자가 없습니다.</td>
+        </tr>
+      `;
+      return;
+    }
+
+    tableBody.innerHTML = pendingUsers
+      .slice(0, 8)
+      .map((user) => `
+        <tr>
+          <td>${escapeHtml(String(user.name || "-"))}</td>
+          <td title="${escapeHtml(String(user.email || "-"))}">${escapeHtml(String(user.email || "-"))}</td>
+          <td>${escapeHtml(formatDateOnly(user.createdAt))}</td>
+        </tr>
+      `)
+      .join("");
+  }
+
   async function updateUserRecord(uid, payload) {
     if (!state.db || !hasAdminAccess()) {
       return false;
@@ -878,6 +929,7 @@
 
     if (!state.db || !hasAdminAccess()) {
       renderUsersTable(null);
+      renderAdminSignupPendingQueue(null);
       return;
     }
 
@@ -889,12 +941,14 @@
     state.usersRef.on("value", (snapshot) => {
       state.usersCache = snapshot.val() || {};
       renderUsersTable(state.usersCache);
+      renderAdminSignupPendingQueue(state.usersCache);
     }, (error) => {
       state.selectedUserUid = "";
       syncUsersToolbarState();
       if (elements.usersTableBody) {
         elements.usersTableBody.innerHTML = `<tr><td colspan="9" class="empty-cell">${TEXT.usersLoadFail}</td></tr>`;
       }
+      renderAdminSignupPendingQueue(null);
       setStatusChip(TEXT.usersLoadFail, "warning");
       if (error?.message) {
         window.alert(`${TEXT.usersLoadFail}\n${error.message}`);
